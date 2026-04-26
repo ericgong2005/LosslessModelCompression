@@ -1,0 +1,49 @@
+---
+title: "Evolutionary Dynamics Simulations Examining the Effect of Genotype-specific Fitness on Population-level Allele Frequencies"
+author: Eric Gong
+output:
+  pdf_document:
+    latex_engine: xelatex
+documentclass: article
+header-includes:
+  - \usepackage{microtype}
+  - \pretolerance=100
+  - \tolerance=2000
+  - \emergencystretch=1em
+  - \hyphenpenalty=1500
+  - \AtBeginDocument{\sloppy}
+  - \usepackage{placeins}
+  - \usepackage{etoolbox}
+  - \pretocmd{\section}{\FloatBarrier}{}{}
+  - \pretocmd{\subsection}{\FloatBarrier}{}{}
+  - \pretocmd{\subsubsection}{\FloatBarrier}{}{}
+---
+# Abstract
+after documentclass:
+classoption:
+  - twocolumn
+
+# 1 Background and Introduction
+
+# 2 Simulation Methodology
+
+# 3 Results and Discussions
+
+# 4 Conclusion
+
+# 5 Sources
+
+# 6 Notes
+
+Model weights are normally distributed, centered at 0 in 92.5\% of tests: https://arxiv.org/pdf/2305.14314
+
+Neuzip: about 3 bits of info in 8 exponential bits, but 8 out of 8 bits used for mantissa: https://arxiv.org/html/2410.20650v1
+
+about 2.6 bits of info in 8 exponential bits https://research.cloudflare.com/papers/unweight-2026.pdf
+ 
+Strong outliers exist past 6.7B parameters, about 20x magnitude, about 0.1\% https://proceedings.neurips.cc/paper_files/paper/2022/file/c3ba4962c05c49636d4c6206a97e9c8a-Paper-Conference.pdf
+
+ZipLLM: deltas or xors are small https://arxiv.org/html/2505.06252v3
+
+LORA changes 0.01\% of weights: https://arxiv.org/abs/2106.09685
+
