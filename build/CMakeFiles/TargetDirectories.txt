@@ -1,0 +1,3 @@
+/shared/home/erg966/LosslessModelCompression/build/CMakeFiles/GenerateWeights.dir
+/shared/home/erg966/LosslessModelCompression/build/CMakeFiles/edit_cache.dir
+/shared/home/erg966/LosslessModelCompression/build/CMakeFiles/rebuild_cache.dir
