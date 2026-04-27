@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 
-INPUT_JSONL = "compression_results_2_10.jsonl"
+INPUT_JSONL = "compression_results_2_30_V1.jsonl"
 OUTPUT_DIR = Path("PLOTS")
 
 SPLITS_TO_PLOT = ["Base", "Redraw0p01", "XOR_Delta"]
