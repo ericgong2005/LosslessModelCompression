@@ -61,11 +61,11 @@ import numpy as np
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results_huffman.jsonl"
 
 CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB per chunk (set >> file size for one-shot)
-MAX_WORKERS = 6                    # reduce if OOM; 6 covers 6 FP32 workers safely
+MAX_WORKERS = 42                    # reduce if OOM; 6 covers 6 FP32 workers safely
 
 # Table overhead: 256 code-length bytes per stream (canonical Huffman header)
 _TABLE_BYTES = 256
