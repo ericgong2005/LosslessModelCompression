@@ -1,0 +1,86 @@
+Output       : /shared/home/erg966/LosslessModelCompression/compression_results_huffman_finegrained.jsonl
+RESULTS dir  : /shared/home/erg966/LosslessModelCompression/RESULTS_2_30
+Chunk size   : 128 MB
+Workers      : 42
+Algorithms   : ['raw_huffman', 'byte_transpose', 'semantic_sep', 'bitplane', 'gorilla_base', 'xor_delta', 'gorilla_xor_delta']
+Codec        : naive Huffman (byte symbols, per-stream tables)
+Total trials : 294
+
+[  1/294]  MXFP4E2M1/Var0p5/raw_huffman             ratio=0.9481  c=  22.75s  elapsed=23s
+[  2/294]  NVFP4E2M1/Var0p01/raw_huffman             ratio=0.9967  c=  24.60s  elapsed=25s
+[  3/294]  MXFP4E2M1/Var0p25/raw_huffman             ratio=0.9506  c=  26.86s  elapsed=27s
+[  4/294]  MXFP4E2M1/Var0p025/raw_huffman             ratio=0.9568  c=  27.16s  elapsed=27s
+[  5/294]  MXFP4E2M1/Var0p05/raw_huffman             ratio=0.9416  c=  27.97s  elapsed=28s
+[  6/294]  MXFP4E2M1/Var0p1/raw_huffman             ratio=0.9568  c=  28.65s  elapsed=29s
+[  7/294]  MXFP4E2M1/Var0p01/raw_huffman             ratio=0.9400  c=  28.70s  elapsed=29s
+[  8/294]  NVFP4E2M1/Var0p25/raw_huffman             ratio=0.9966  c=  29.69s  elapsed=30s
+[  9/294]  NVFP4E2M1/Var0p5/raw_huffman             ratio=0.9965  c=  29.98s  elapsed=30s
+[ 10/294]  NVFP4E2M1/Var0p025/raw_huffman             ratio=0.9965  c=  30.04s  elapsed=30s
+[ 11/294]  NVFP4E2M1/Var0p05/raw_huffman             ratio=0.9966  c=  30.09s  elapsed=30s
+[ 12/294]  NVFP4E2M1/Var0p1/raw_huffman             ratio=0.9965  c=  30.27s  elapsed=30s
+[ 13/294]  FP8E5M2/Var0p25/raw_huffman             ratio=0.7106  c=  44.12s  elapsed=44s
+[ 14/294]  FP8E4M3/Var0p025/raw_huffman             ratio=0.7961  c=  44.25s  elapsed=44s
+[ 15/294]  FP8E4M3/Var0p01/raw_huffman             ratio=0.7962  c=  44.67s  elapsed=45s
+[ 16/294]  FP8E4M3/Var0p1/raw_huffman             ratio=0.7962  c=  44.75s  elapsed=45s
+[ 17/294]  FP8E5M2/Var0p025/raw_huffman             ratio=0.7106  c=  45.28s  elapsed=45s
+[ 18/294]  FP8E4M3/Var0p25/raw_huffman             ratio=0.7962  c=  45.33s  elapsed=45s
+[ 19/294]  FP8E5M2/Var0p01/raw_huffman             ratio=0.7106  c=  45.56s  elapsed=46s
+[ 20/294]  FP8E5M2/Var0p05/raw_huffman             ratio=0.7106  c=  45.58s  elapsed=46s
+[ 21/294]  FP8E4M3/Var0p05/raw_huffman             ratio=0.7961  c=  45.66s  elapsed=46s
+[ 22/294]  FP8E5M2/Var0p5/raw_huffman             ratio=0.7106  c=  45.82s  elapsed=46s
+[ 23/294]  FP8E4M3/Var0p5/raw_huffman             ratio=0.7961  c=  45.88s  elapsed=46s
+[ 24/294]  FP8E5M2/Var0p1/raw_huffman             ratio=0.7106  c=  45.88s  elapsed=46s
+[ 25/294]  FP8E4M3/Var0p1/byte_transpose          ratio=0.7962  c=  22.07s  elapsed=68s
+[ 26/294]  FP8E4M3/Var0p01/byte_transpose          ratio=0.7962  c=  22.48s  elapsed=69s
+[ 27/294]  FP8E4M3/Var0p025/byte_transpose          ratio=0.7961  c=  22.98s  elapsed=69s
+[ 28/294]  FP8E4M3/Var0p05/byte_transpose          ratio=0.7961  c=  23.10s  elapsed=69s
+[ 29/294]  FP8E4M3/Var0p5/byte_transpose          ratio=0.7961  c=  23.75s  elapsed=71s
+[ 30/294]  FP8E4M3/Var0p25/byte_transpose          ratio=0.7962  c=  24.16s  elapsed=71s
+[ 31/294]  FP16E5M10/Var0p025/raw_huffman             ratio=0.9183  c=  85.73s  elapsed=86s
+[ 32/294]  FP16E5M10/Var0p5/raw_huffman             ratio=0.9185  c=  86.65s  elapsed=87s
+[ 33/294]  FP16E5M10/Var0p1/raw_huffman             ratio=0.9184  c=  87.35s  elapsed=87s
+[ 34/294]  FP16E5M10/Var0p25/raw_huffman             ratio=0.9187  c=  87.59s  elapsed=88s
+[ 35/294]  FP16E5M10/Var0p05/raw_huffman             ratio=0.9182  c=  88.69s  elapsed=89s
+[ 36/294]  FP16E5M10/Var0p01/raw_huffman             ratio=0.9181  c=  89.37s  elapsed=89s
+[ 37/294]  BF16E8M7/Var0p025/raw_huffman             ratio=0.7797  c=  89.50s  elapsed=90s
+[ 38/294]  BF16E8M7/Var0p05/raw_huffman             ratio=0.7762  c=  89.66s  elapsed=90s
+[ 39/294]  BF16E8M7/Var0p01/raw_huffman             ratio=0.7826  c=  89.74s  elapsed=90s
+[ 40/294]  BF16E8M7/Var0p25/raw_huffman             ratio=0.7831  c=  90.34s  elapsed=90s
+[ 41/294]  BF16E8M7/Var0p5/raw_huffman             ratio=0.7781  c=  91.19s  elapsed=91s
+[ 42/294]  BF16E8M7/Var0p1/raw_huffman             ratio=0.7797  c=  93.19s  elapsed=93s
+[ 43/294]  FP8E5M2/Var0p1/byte_transpose          ratio=0.7106  c=  28.37s  elapsed=98s
+[ 44/294]  FP8E5M2/Var0p05/byte_transpose          ratio=0.7106  c=  29.70s  elapsed=100s
+[ 45/294]  FP8E5M2/Var0p025/byte_transpose          ratio=0.7106  c=  30.23s  elapsed=100s
+[ 46/294]  FP8E5M2/Var0p01/byte_transpose          ratio=0.7106  c=  31.11s  elapsed=100s
+[ 47/294]  FP8E5M2/Var0p25/byte_transpose          ratio=0.7106  c=  31.29s  elapsed=102s
+[ 48/294]  FP8E5M2/Var0p5/byte_transpose          ratio=0.7106  c=  31.70s  elapsed=103s
+[ 49/294]  MXFP4E2M1/Var0p01/byte_transpose          ratio=0.9400  c=  18.57s  elapsed=105s
+[ 50/294]  MXFP4E2M1/Var0p025/byte_transpose          ratio=0.9568  c=  18.29s  elapsed=106s
+[ 51/294]  MXFP4E2M1/Var0p1/byte_transpose          ratio=0.9568  c=  19.15s  elapsed=108s
+[ 52/294]  MXFP4E2M1/Var0p05/byte_transpose          ratio=0.9416  c=  19.80s  elapsed=108s
+[ 53/294]  MXFP4E2M1/Var0p25/byte_transpose          ratio=0.9506  c=  19.74s  elapsed=109s
+[ 54/294]  MXFP4E2M1/Var0p5/byte_transpose          ratio=0.9481  c=  18.82s  elapsed=109s
+[ 55/294]  NVFP4E2M1/Var0p01/byte_transpose          ratio=0.9967  c=  19.68s  elapsed=110s
+[ 56/294]  NVFP4E2M1/Var0p05/byte_transpose          ratio=0.9966  c=  20.29s  elapsed=111s
+[ 57/294]  NVFP4E2M1/Var0p025/byte_transpose          ratio=0.9965  c=  20.56s  elapsed=112s
+[ 58/294]  NVFP4E2M1/Var0p1/byte_transpose          ratio=0.9965  c=  19.41s  elapsed=112s
+[ 59/294]  NVFP4E2M1/Var0p25/byte_transpose          ratio=0.9966  c=  19.76s  elapsed=113s
+[ 60/294]  NVFP4E2M1/Var0p5/byte_transpose          ratio=0.9965  c=  18.26s  elapsed=114s
+[ 61/294]  BF16E8M7/Var0p25/byte_transpose          ratio=0.6722  c=  73.67s  elapsed=120s
+[ 62/294]  FP16E5M10/Var0p01/byte_transpose          ratio=0.8439  c=  91.40s  elapsed=121s
+[ 63/294]  FP16E5M10/Var0p5/byte_transpose          ratio=0.8439  c=  90.75s  elapsed=121s
+[ 64/294]  FP16E5M10/Var0p1/byte_transpose          ratio=0.8440  c=  90.73s  elapsed=122s
+[ 65/294]  BF16E8M7/Var0p05/byte_transpose          ratio=0.6661  c=  76.75s  elapsed=122s
+[ 66/294]  FP16E5M10/Var0p25/byte_transpose          ratio=0.8449  c=  92.95s  elapsed=124s
+[ 67/294]  BF16E8M7/Var0p01/byte_transpose          ratio=0.6719  c=  78.51s  elapsed=124s
+[ 68/294]  BF16E8M7/Var0p025/byte_transpose          ratio=0.6704  c=  78.62s  elapsed=124s
+[ 69/294]  BF16E8M7/Var0p1/byte_transpose          ratio=0.6695  c=  78.47s  elapsed=124s
+[ 70/294]  FP16E5M10/Var0p05/byte_transpose          ratio=0.8447  c=  95.12s  elapsed=126s
+[ 71/294]  BF16E8M7/Var0p5/byte_transpose          ratio=0.6674  c=  80.97s  elapsed=127s
+[ 72/294]  FP16E5M10/Var0p025/byte_transpose          ratio=0.8439  c=  96.97s  elapsed=127s
+[ 73/294]  FP32E8M23/Var0p5/raw_huffman             ratio=0.9250  c= 146.13s  elapsed=146s
+[ 74/294]  FP32E8M23/Var0p1/raw_huffman             ratio=0.9256  c= 147.14s  elapsed=147s
+[ 75/294]  FP32E8M23/Var0p01/raw_huffman             ratio=0.9271  c= 148.87s  elapsed=149s
+[ 76/294]  FP32E8M23/Var0p05/raw_huffman             ratio=0.9243  c= 149.68s  elapsed=150s
+[ 77/294]  FP32E8M23/Var0p25/raw_huffman             ratio=0.9276  c= 150.48s  elapsed=151s
+[ 78/294]  FP32E8M23/Var0p025/raw_huffman             ratio=0.9257  c= 153.24s  elapsed=153s
