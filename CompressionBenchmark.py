@@ -65,12 +65,12 @@ import zstandard as zstd
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
-OUTPUT_JSONL = Path(__file__).parent / "compression_results_zstd_finegrained.jsonl"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+OUTPUT_JSONL = Path(__file__).parent / "compression_results_zstd.jsonl"
 
 CHUNK_BYTES = 128 * 1024 * 1024   # set larger than any file for one-shot reads
 ZSTD_LEVEL  = 1
-MAX_WORKERS = 42                   # safe for 69 GB node
+MAX_WORKERS = 6                    # safe for 69 GB node
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset structure
@@ -166,10 +166,24 @@ def _fields_byte_transpose(chunk: bytes, fmt: dict):
 
 
 def _fields_semantic_sep(chunk: bytes, fmt: dict):
+    """
+    Yield one (name, bytes) stream per semantic field — sign, exp, mant.
+
+    Fields are kept as whole-value streams, NOT unpacked to individual
+    bit-planes (that is what _fields_bitplane does).
+
+    Streams:
+      FP4 packed  → ("sign", packbits) + ("magnitude_index", uint8/elem)
+      E8M0        → ("exp",  raw bytes)
+      Standard    → ("sign", packbits)
+                    ("exp",  uint8/elem)              [n_exp <= 8 fits in u8]
+                    ("mant", uint8/uint16/3-byte u32) [minimal whole bytes]
+    """
     n_sign = fmt["n_sign"]
     n_exp  = fmt["n_exp"]
     n_mant = fmt["n_mant"]
 
+    # Packed-nibble FP4
     if fmt["packed4"]:
         packed  = np.frombuffer(chunk, dtype=np.uint8)
         lo      = packed & 0x0F
@@ -177,38 +191,41 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict):
         nibbles = np.empty(len(packed) * 2, dtype=np.uint8)
         nibbles[0::2], nibbles[1::2] = lo, hi
         sign_bits = ((nibbles >> 3) & 1).astype(np.uint8)
-        mag_bits  = (nibbles & 0x7).astype(np.uint8)
-        yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
-        for b in (2, 1, 0):
-            plane = ((mag_bits >> b) & 1).astype(np.uint8)
-            yield (f"mag_bit{b}", np.packbits(plane).tobytes());  del plane
+        mag_idx   = (nibbles & 0x7).astype(np.uint8)
+        yield ("sign",            np.packbits(sign_bits).tobytes());  del sign_bits
+        yield ("magnitude_index", mag_idx.tobytes());                 del mag_idx
         return
 
+    # Pure-exponent byte (E8M0)
     if n_sign == 0 and n_mant == 0:
         yield ("exp", chunk)
         return
 
+    # Standard float formats
     dtype = _uint_dtype(fmt)
     arr   = np.frombuffer(chunk, dtype=dtype)
     bits  = fmt["uint_bits"]
 
+    # Sign: 1 bit/element -> packbits
     if n_sign:
         sign_bits = ((arr >> (bits - 1)) & 1).astype(np.uint8)
         yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
 
+    # Exponent: n_exp <= 8 bits -> one uint8 per element
     exp_mask = (1 << n_exp) - 1
-    exp_vals = (arr >> n_mant) & exp_mask
-    for b in range(n_exp - 1, -1, -1):
-        plane = ((exp_vals >> b) & 1).astype(np.uint8)
-        yield (f"exp_bit{b}", np.packbits(plane).tobytes());  del plane
-    del exp_vals
+    yield ("exp", ((arr >> n_mant) & exp_mask).astype(np.uint8).tobytes())
 
+    # Mantissa: smallest whole type that holds n_mant bits
     if n_mant:
-        mant_mask = (1 << n_mant) - 1
-        mant_vals = arr & mant_mask
-        for b in range(n_mant - 1, -1, -1):
-            plane = ((mant_vals >> b) & 1).astype(np.uint8)
-            yield (f"mant_bit{b}", np.packbits(plane).tobytes());  del plane
+        mant = arr & ((1 << n_mant) - 1)
+        if n_mant <= 8:
+            yield ("mant", mant.astype(np.uint8).tobytes())
+        elif n_mant <= 16:
+            yield ("mant", mant.astype(np.uint16).tobytes())
+        else:
+            # FP32: 23-bit mantissa — drop always-zero MSByte of uint32
+            u32 = mant.astype(np.uint32)
+            yield ("mant", u32.view(np.uint8).reshape(-1, 4)[:, :3].flatten().tobytes())
 
 
 def _fields_bitplane(chunk: bytes, fmt: dict):
