@@ -1,0 +1,347 @@
+Output       : /shared/home/erg966/LosslessModelCompression/compression_results_huffman.jsonl
+RESULTS dir  : /shared/home/erg966/LosslessModelCompression/RESULTS_2_30
+Chunk size   : 128 MB
+Workers      : 42
+Algorithms   : ['raw_huffman', 'byte_transpose', 'semantic_sep', 'bitplane', 'gorilla_base', 'xor_delta', 'gorilla_xor_delta']
+Codec        : naive Huffman (byte symbols, per-stream tables)
+Total trials : 294
+
+  OK   MXFP4E2M1/Var0p025/raw_huffman                           ratio=0.9568  c=  16.10s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p5/raw_huffman                             ratio=0.9481  c=  16.10s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p01/raw_huffman                            ratio=0.9400  c=  16.57s  d= 0.0006s
+  OK   MXFP4E2M1/Var0p05/raw_huffman                            ratio=0.9416  c=  16.72s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p25/raw_huffman                            ratio=0.9506  c=  17.18s  d= 0.0002s
+  OK   MXFP4E2M1/Var0p1/raw_huffman                             ratio=0.9568  c=  17.18s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p1/raw_huffman                             ratio=0.9965  c=  17.18s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p01/raw_huffman                            ratio=0.9967  c=  17.18s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p25/raw_huffman                            ratio=0.9966  c=  17.56s  d= 0.0005s
+  OK   NVFP4E2M1/Var0p5/raw_huffman                             ratio=0.9965  c=  18.81s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p05/raw_huffman                            ratio=0.9966  c=  18.76s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p025/raw_huffman                           ratio=0.9965  c=  19.41s  d= 0.0004s
+  OK   FP8E5M2/Var0p25/raw_huffman                              ratio=0.7106  c=  31.44s  d= 0.0004s
+  OK   FP8E4M3/Var0p01/raw_huffman                              ratio=0.7962  c=  31.44s  d= 0.0004s
+  OK   FP8E4M3/Var0p25/raw_huffman                              ratio=0.7962  c=  31.70s  d= 0.0004s
+  OK   FP8E4M3/Var0p5/raw_huffman                               ratio=0.7961  c=  31.44s  d= 0.0004s
+  OK   FP8E5M2/Var0p5/raw_huffman                               ratio=0.7106  c=  31.89s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p025/byte_transpose                        ratio=0.9568  c=  14.49s  d= 0.0006s
+  OK   FP8E4M3/Var0p05/raw_huffman                              ratio=0.7961  c=  31.44s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p5/byte_transpose                          ratio=0.9481  c=  14.58s  d= 0.0004s
+  OK   FP8E4M3/Var0p025/raw_huffman                             ratio=0.7961  c=  32.24s  d= 0.0004s
+  OK   FP8E5M2/Var0p025/raw_huffman                             ratio=0.7106  c=  32.66s  d= 0.0005s
+  OK   MXFP4E2M1/Var0p01/byte_transpose                         ratio=0.9400  c=  14.52s  d= 0.0004s
+  OK   FP8E5M2/Var0p05/raw_huffman                              ratio=0.7106  c=  32.85s  d= 0.0003s
+  OK   FP8E5M2/Var0p01/raw_huffman                              ratio=0.7106  c=  33.75s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p25/byte_transpose                         ratio=0.9506  c=  15.32s  d= 0.0005s
+  OK   FP8E5M2/Var0p1/raw_huffman                               ratio=0.7106  c=  33.94s  d= 0.0003s
+  OK   MXFP4E2M1/Var0p1/byte_transpose                          ratio=0.9568  c=  16.00s  d= 0.0003s
+  OK   MXFP4E2M1/Var0p05/byte_transpose                         ratio=0.9416  c=  16.57s  d= 0.0003s
+  OK   FP8E4M3/Var0p1/raw_huffman                               ratio=0.7962  c=  34.47s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p01/byte_transpose                         ratio=0.9967  c=  16.13s  d= 0.0005s
+  OK   NVFP4E2M1/Var0p25/byte_transpose                         ratio=0.9966  c=  15.75s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p1/byte_transpose                          ratio=0.9965  c=  16.21s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p5/byte_transpose                          ratio=0.9965  c=  15.35s  d= 0.0005s
+  OK   NVFP4E2M1/Var0p05/byte_transpose                         ratio=0.9966  c=  15.78s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p025/byte_transpose                        ratio=0.9965  c=  15.92s  d= 0.0009s
+  OK   FP8E5M2/Var0p25/byte_transpose                           ratio=0.7106  c=  31.56s  d= 0.0005s
+  OK   FP8E5M2/Var0p5/byte_transpose                            ratio=0.7106  c=  31.72s  d= 0.0003s
+  OK   FP8E4M3/Var0p25/byte_transpose                           ratio=0.7962  c=  32.59s  d= 0.0005s
+  OK   FP8E4M3/Var0p025/byte_transpose                          ratio=0.7961  c=  32.29s  d= 0.0004s
+  OK   FP8E4M3/Var0p01/byte_transpose                           ratio=0.7962  c=  33.09s  d= 0.0004s
+  OK   FP8E4M3/Var0p5/byte_transpose                            ratio=0.7961  c=  33.21s  d= 0.0005s
+  OK   FP8E4M3/Var0p05/byte_transpose                           ratio=0.7961  c=  35.81s  d= 0.0004s
+  OK   FP8E5M2/Var0p025/byte_transpose                          ratio=0.7106  c=  35.60s  d= 0.0005s
+  OK   FP8E5M2/Var0p05/byte_transpose                           ratio=0.7106  c=  35.75s  d= 0.0005s
+  OK   FP8E4M3/Var0p1/byte_transpose                            ratio=0.7962  c=  33.80s  d= 0.0004s
+  OK   FP8E5M2/Var0p1/byte_transpose                            ratio=0.7106  c=  35.52s  d= 0.0004s
+  OK   FP8E5M2/Var0p01/byte_transpose                           ratio=0.7106  c=  36.49s  d= 0.0004s
+  OK   FP16E5M10/Var0p025/raw_huffman                           ratio=0.9183  c=  77.11s  d= 0.0002s
+  OK   BF16E8M7/Var0p01/raw_huffman                             ratio=0.7826  c=  78.03s  d= 0.0004s
+  OK   BF16E8M7/Var0p25/raw_huffman                             ratio=0.7831  c=  79.24s  d= 0.0003s
+  OK   BF16E8M7/Var0p5/raw_huffman                              ratio=0.7781  c=  80.12s  d= 0.0005s
+  OK   FP16E5M10/Var0p5/raw_huffman                             ratio=0.9185  c=  80.98s  d= 0.0003s
+  OK   BF16E8M7/Var0p05/raw_huffman                             ratio=0.7762  c=  81.49s  d= 0.0006s
+  OK   FP16E5M10/Var0p05/raw_huffman                            ratio=0.9182  c=  82.16s  d= 0.0005s
+  OK   BF16E8M7/Var0p1/raw_huffman                              ratio=0.7797  c=  82.16s  d= 0.0004s
+  OK   FP16E5M10/Var0p1/raw_huffman                             ratio=0.9184  c=  83.45s  d= 0.0004s
+  OK   BF16E8M7/Var0p025/raw_huffman                            ratio=0.7797  c=  83.62s  d= 0.0004s
+  OK   FP16E5M10/Var0p25/raw_huffman                            ratio=0.9187  c=  83.81s  d= 0.0004s
+  OK   FP16E5M10/Var0p01/raw_huffman                            ratio=0.9181  c=  85.05s  d= 0.0004s
+  OK   FP32E8M23/Var0p025/raw_huffman                           ratio=0.9257  c= 151.73s  d= 0.0004s
+  OK   FP32E8M23/Var0p5/raw_huffman                             ratio=0.9250  c= 152.63s  d= 0.0003s
+  OK   FP32E8M23/Var0p25/raw_huffman                            ratio=0.9276  c= 153.70s  d= 0.0003s
+  OK   FP32E8M23/Var0p1/raw_huffman                             ratio=0.9256  c= 154.72s  d= 0.0004s
+  OK   FP32E8M23/Var0p01/raw_huffman                            ratio=0.9271  c= 155.74s  d= 0.0002s
+  OK   FP32E8M23/Var0p05/raw_huffman                            ratio=0.9243  c= 156.34s  d= 0.0006s
+  OK   FP16E5M10/Var0p025/byte_transpose                        ratio=0.8439  c=  85.14s  d= 0.0011s
+  OK   BF16E8M7/Var0p01/byte_transpose                          ratio=0.6719  c=  89.95s  d= 0.0004s
+  OK   FP16E5M10/Var0p5/byte_transpose                          ratio=0.8439  c=  93.46s  d= 0.0004s
+  OK   BF16E8M7/Var0p25/byte_transpose                          ratio=0.6722  c=  97.16s  d= 0.0005s
+  OK   BF16E8M7/Var0p05/byte_transpose                          ratio=0.6661  c=  96.56s  d= 0.0006s
+  OK   FP16E5M10/Var0p01/byte_transpose                         ratio=0.8439  c=  93.10s  d= 0.0006s
+  OK   BF16E8M7/Var0p1/byte_transpose                           ratio=0.6695  c=  96.14s  d= 0.0006s
+  OK   BF16E8M7/Var0p5/byte_transpose                           ratio=0.6674  c=  98.42s  d= 0.0006s
+  OK   FP16E5M10/Var0p05/byte_transpose                         ratio=0.8447  c=  96.58s  d= 0.0004s
+  OK   FP16E5M10/Var0p25/byte_transpose                         ratio=0.8449  c=  97.88s  d= 0.0006s
+  OK   BF16E8M7/Var0p025/byte_transpose                         ratio=0.6704  c=  99.26s  d= 0.0005s
+  OK   FP16E5M10/Var0p1/byte_transpose                          ratio=0.8440  c= 102.86s  d= 0.0007s
+  OK   MXFP4E2M1/Var0p025/semantic_sep                          ratio=0.9720  c= 167.03s  d= 0.0015s
+  OK   MXFP4E2M1/Var0p05/semantic_sep                           ratio=0.9709  c= 164.94s  d= 0.0018s
+  OK   MXFP4E2M1/Var0p01/semantic_sep                           ratio=0.9652  c= 169.27s  d= 0.0016s
+  OK   MXFP4E2M1/Var0p1/semantic_sep                            ratio=0.9720  c= 170.44s  d= 0.0014s
+  OK   MXFP4E2M1/Var0p5/semantic_sep                            ratio=0.9664  c= 176.99s  d= 0.0017s
+  OK   MXFP4E2M1/Var0p25/semantic_sep                           ratio=0.9759  c= 177.30s  d= 0.0013s
+  OK   NVFP4E2M1/Var0p25/semantic_sep                           ratio=0.9989  c= 163.72s  d= 0.0010s
+  OK   NVFP4E2M1/Var0p01/semantic_sep                           ratio=0.9989  c= 165.57s  d= 0.0013s
+  OK   NVFP4E2M1/Var0p05/semantic_sep                           ratio=0.9989  c= 164.93s  d= 0.0016s
+  OK   NVFP4E2M1/Var0p5/semantic_sep                            ratio=0.9989  c= 166.34s  d= 0.0012s
+  OK   NVFP4E2M1/Var0p1/semantic_sep                            ratio=0.9989  c= 177.81s  d= 0.0013s
+  OK   NVFP4E2M1/Var0p025/semantic_sep                          ratio=0.9989  c= 168.44s  d= 0.0014s
+  OK   MXFP4E2M1/Var0p5/bitplane                                ratio=0.9664  c= 170.96s  d= 0.0025s
+  OK   MXFP4E2M1/Var0p05/bitplane                               ratio=0.9709  c= 186.64s  d= 0.0022s
+  OK   MXFP4E2M1/Var0p025/bitplane                              ratio=0.9720  c= 186.62s  d= 0.0021s
+  OK   MXFP4E2M1/Var0p01/bitplane                               ratio=0.9652  c= 183.92s  d= 0.0023s
+  OK   MXFP4E2M1/Var0p25/bitplane                               ratio=0.9759  c= 186.07s  d= 0.0024s
+  OK   MXFP4E2M1/Var0p5/gorilla_base                            ratio=0.9943  c=  20.36s  d= 0.0004s
+  OK   FP32E8M23/Var0p025/byte_transpose                        ratio=0.8352  c= 280.88s  d= 0.0013s
+  OK   MXFP4E2M1/Var0p1/bitplane                                ratio=0.9720  c= 200.44s  d= 0.0029s
+  OK   MXFP4E2M1/Var0p025/gorilla_base                          ratio=0.9965  c=  22.67s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p05/gorilla_base                           ratio=0.9975  c=  25.41s  d= 0.0005s
+  OK   MXFP4E2M1/Var0p01/gorilla_base                           ratio=0.9957  c=  23.03s  d= 0.0004s
+  OK   FP32E8M23/Var0p5/byte_transpose                          ratio=0.8337  c= 289.06s  d= 0.0012s
+  OK   FP32E8M23/Var0p25/byte_transpose                         ratio=0.8361  c= 290.59s  d= 0.0010s
+  OK   MXFP4E2M1/Var0p25/gorilla_base                           ratio=0.9984  c=  22.20s  d= 0.0005s
+  OK   FP32E8M23/Var0p05/byte_transpose                         ratio=0.8330  c= 295.82s  d= 0.0010s
+  OK   FP32E8M23/Var0p01/byte_transpose                         ratio=0.8359  c= 296.44s  d= 0.0012s
+  OK   MXFP4E2M1/Var0p5/xor_delta                               ratio=0.1388  c=  29.37s  d= 0.0007s
+  OK   NVFP4E2M1/Var0p25/bitplane                               ratio=0.9989  c= 191.85s  d= 0.0026s
+  OK   MXFP4E2M1/Var0p1/gorilla_base                            ratio=0.9965  c=  25.31s  d= 0.0005s
+  OK   MXFP4E2M1/Var0p05/xor_delta                              ratio=0.1370  c=  24.83s  d= 0.0004s
+  OK   FP32E8M23/Var0p1/byte_transpose                          ratio=0.8347  c= 310.64s  d= 0.0012s
+  OK   MXFP4E2M1/Var0p025/xor_delta                             ratio=0.1384  c=  27.75s  d= 0.0005s
+  OK   MXFP4E2M1/Var0p01/xor_delta                              ratio=0.1380  c=  28.53s  d= 0.0007s
+  OK   NVFP4E2M1/Var0p5/bitplane                                ratio=0.9989  c= 193.44s  d= 0.0031s
+  OK   NVFP4E2M1/Var0p025/bitplane                              ratio=0.9989  c= 190.31s  d= 0.0034s
+  OK   MXFP4E2M1/Var0p25/xor_delta                              ratio=0.1368  c=  26.20s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p25/gorilla_base                           ratio=1.0000  c=  20.05s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p1/xor_delta                               ratio=0.1384  c=  24.59s  d= 0.0004s
+  OK   MXFP4E2M1/Var0p5/gorilla_xor_delta                       ratio=0.1495  c=  30.06s  d= 0.0006s
+[ 1/42]  MXFP4E2M1/Var0p5  → 7 records written  (cumulative 7/294, elapsed 490s)
+  OK   NVFP4E2M1/Var0p05/bitplane                               ratio=0.9989  c= 213.23s  d= 0.0025s
+  OK   NVFP4E2M1/Var0p1/bitplane                                ratio=0.9989  c= 208.21s  d= 0.0027s
+  OK   NVFP4E2M1/Var0p01/bitplane                               ratio=0.9989  c= 220.70s  d= 0.0033s
+  OK   MXFP4E2M1/Var0p05/gorilla_xor_delta                      ratio=0.1474  c=  30.08s  d= 0.0004s
+[ 2/42]  MXFP4E2M1/Var0p05  → 7 records written  (cumulative 14/294, elapsed 497s)
+  OK   NVFP4E2M1/Var0p5/gorilla_base                            ratio=1.0000  c=  22.79s  d= 0.0003s
+  OK   MXFP4E2M1/Var0p025/gorilla_xor_delta                     ratio=0.1492  c=  30.31s  d= 0.0003s
+[ 3/42]  MXFP4E2M1/Var0p025  → 7 records written  (cumulative 21/294, elapsed 499s)
+  OK   MXFP4E2M1/Var0p01/gorilla_xor_delta                      ratio=0.1486  c=  27.44s  d= 0.0004s
+[ 4/42]  MXFP4E2M1/Var0p01  → 7 records written  (cumulative 28/294, elapsed 500s)
+  OK   NVFP4E2M1/Var0p025/gorilla_base                          ratio=1.0000  c=  23.65s  d= 0.0003s
+  OK   MXFP4E2M1/Var0p25/gorilla_xor_delta                      ratio=0.1472  c=  27.18s  d= 0.0004s
+[ 5/42]  MXFP4E2M1/Var0p25  → 7 records written  (cumulative 35/294, elapsed 507s)
+  OK   NVFP4E2M1/Var0p25/xor_delta                              ratio=0.1407  c=  23.51s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p05/gorilla_base                           ratio=1.0000  c=  20.22s  d= 0.0002s
+  OK   NVFP4E2M1/Var0p01/gorilla_base                           ratio=1.0000  c=  19.69s  d= 0.0002s
+  OK   NVFP4E2M1/Var0p1/gorilla_base                            ratio=1.0000  c=  21.05s  d= 0.0003s
+  OK   MXFP4E2M1/Var0p1/gorilla_xor_delta                       ratio=0.1492  c=  28.02s  d= 0.0004s
+[ 6/42]  MXFP4E2M1/Var0p1  → 7 records written  (cumulative 42/294, elapsed 517s)
+  OK   NVFP4E2M1/Var0p5/xor_delta                               ratio=0.1407  c=  19.62s  d= 0.0003s
+  OK   NVFP4E2M1/Var0p025/xor_delta                             ratio=0.1407  c=  20.43s  d= 0.0004s
+  OK   NVFP4E2M1/Var0p25/gorilla_xor_delta                      ratio=0.1530  c=  22.90s  d= 0.0003s
+[ 7/42]  NVFP4E2M1/Var0p25  → 7 records written  (cumulative 49/294, elapsed 535s)
+  OK   NVFP4E2M1/Var0p1/xor_delta                               ratio=0.1407  c=  19.12s  d= 0.0002s
+  OK   NVFP4E2M1/Var0p05/xor_delta                              ratio=0.1407  c=  21.75s  d= 0.0005s
+  OK   NVFP4E2M1/Var0p01/xor_delta                              ratio=0.1407  c=  26.03s  d= 0.0005s
+  OK   NVFP4E2M1/Var0p025/gorilla_xor_delta                     ratio=0.1530  c=  21.98s  d= 0.0003s
+[ 8/42]  NVFP4E2M1/Var0p025  → 7 records written  (cumulative 56/294, elapsed 550s)
+  OK   NVFP4E2M1/Var0p5/gorilla_xor_delta                       ratio=0.1530  c=  24.77s  d= 0.0005s
+[ 9/42]  NVFP4E2M1/Var0p5  → 7 records written  (cumulative 63/294, elapsed 551s)
+  OK   NVFP4E2M1/Var0p1/gorilla_xor_delta                       ratio=0.1530  c=  23.83s  d= 0.0004s
+[10/42]  NVFP4E2M1/Var0p1  → 7 records written  (cumulative 70/294, elapsed 567s)
+  OK   NVFP4E2M1/Var0p05/gorilla_xor_delta                      ratio=0.1530  c=  31.79s  d= 0.0005s
+[11/42]  NVFP4E2M1/Var0p05  → 7 records written  (cumulative 77/294, elapsed 575s)
+  OK   NVFP4E2M1/Var0p01/gorilla_xor_delta                      ratio=0.1530  c=  29.55s  d= 0.0003s
+[12/42]  NVFP4E2M1/Var0p01  → 7 records written  (cumulative 84/294, elapsed 576s)
+  OK   FP8E5M2/Var0p01/semantic_sep                             ratio=0.7754  c= 407.34s  d= 0.0024s
+  OK   FP8E4M3/Var0p025/semantic_sep                            ratio=0.8546  c= 416.59s  d= 0.0023s
+  OK   FP8E4M3/Var0p05/semantic_sep                             ratio=0.8546  c= 422.48s  d= 0.0029s
+  OK   FP8E5M2/Var0p05/semantic_sep                             ratio=0.7754  c= 423.45s  d= 0.0031s
+  OK   FP8E4M3/Var0p5/semantic_sep                              ratio=0.8546  c= 440.31s  d= 0.0030s
+  OK   FP8E4M3/Var0p1/semantic_sep                              ratio=0.8546  c= 460.41s  d= 0.0031s
+  OK   FP8E5M2/Var0p25/semantic_sep                             ratio=0.7754  c= 460.50s  d= 0.0022s
+  OK   FP8E5M2/Var0p5/semantic_sep                              ratio=0.7754  c= 452.23s  d= 0.0023s
+  OK   FP8E4M3/Var0p25/semantic_sep                             ratio=0.8546  c= 441.69s  d= 0.0029s
+  OK   FP8E5M2/Var0p1/semantic_sep                              ratio=0.7754  c= 455.91s  d= 0.0030s
+  OK   FP8E5M2/Var0p025/semantic_sep                            ratio=0.7754  c= 462.61s  d= 0.0028s
+  OK   FP8E4M3/Var0p01/semantic_sep                             ratio=0.8546  c= 461.25s  d= 0.0034s
+  OK   FP8E5M2/Var0p25/bitplane                                 ratio=0.7754  c= 253.51s  d= 0.0015s
+  OK   FP8E5M2/Var0p05/bitplane                                 ratio=0.7754  c= 288.12s  d= 0.0021s
+  OK   FP8E4M3/Var0p05/bitplane                                 ratio=0.8546  c= 288.74s  d= 0.0022s
+  OK   FP8E5M2/Var0p1/bitplane                                  ratio=0.7754  c= 287.98s  d= 0.0021s
+  OK   FP8E4M3/Var0p025/bitplane                                ratio=0.8546  c= 326.94s  d= 0.0024s
+  OK   FP8E5M2/Var0p01/bitplane                                 ratio=0.7754  c= 313.82s  d= 0.0024s
+  OK   FP8E5M2/Var0p05/gorilla_base                             ratio=0.7758  c=  29.92s  d= 0.0003s
+  OK   FP8E4M3/Var0p1/bitplane                                  ratio=0.8546  c= 309.97s  d= 0.0023s
+  OK   FP8E5M2/Var0p25/gorilla_base                             ratio=0.7758  c=  36.54s  d= 0.0005s
+  OK   FP8E4M3/Var0p01/bitplane                                 ratio=0.8546  c= 291.85s  d= 0.0023s
+  OK   FP8E4M3/Var0p05/gorilla_base                             ratio=0.8801  c=  28.96s  d= 0.0003s
+  OK   FP8E4M3/Var0p25/bitplane                                 ratio=0.8546  c= 308.48s  d= 0.0027s
+  OK   FP8E5M2/Var0p025/bitplane                                ratio=0.7754  c= 295.74s  d= 0.0021s
+  OK   FP8E4M3/Var0p025/gorilla_base                            ratio=0.8801  c=  30.13s  d= 0.0003s
+  OK   FP8E5M2/Var0p1/gorilla_base                              ratio=0.7758  c=  31.98s  d= 0.0006s
+  OK   FP8E4M3/Var0p1/gorilla_base                              ratio=0.8801  c=  29.77s  d= 0.0004s
+  OK   FP8E5M2/Var0p01/gorilla_base                             ratio=0.7758  c=  42.66s  d= 0.0003s
+  OK   FP8E4M3/Var0p5/bitplane                                  ratio=0.8546  c= 313.61s  d= 0.0027s
+  OK   FP8E4M3/Var0p01/gorilla_base                             ratio=0.8801  c=  31.36s  d= 0.0003s
+  OK   FP8E5M2/Var0p05/xor_delta                                ratio=0.1356  c=  42.64s  d= 0.0003s
+  OK   FP8E5M2/Var0p25/xor_delta                                ratio=0.1356  c=  43.08s  d= 0.0003s
+  OK   FP8E4M3/Var0p25/gorilla_base                             ratio=0.8801  c=  30.58s  d= 0.0003s
+  OK   FP8E5M2/Var0p5/bitplane                                  ratio=0.7754  c= 308.92s  d= 0.0024s
+  OK   FP8E4M3/Var0p05/xor_delta                                ratio=0.1383  c=  39.21s  d= 0.0002s
+  OK   FP8E5M2/Var0p025/gorilla_base                            ratio=0.7758  c=  32.69s  d= 0.0003s
+  OK   FP8E4M3/Var0p025/xor_delta                               ratio=0.1383  c=  39.02s  d= 0.0004s
+  OK   FP8E5M2/Var0p1/xor_delta                                 ratio=0.1356  c=  38.33s  d= 0.0005s
+  OK   FP8E4M3/Var0p1/xor_delta                                 ratio=0.1383  c=  39.67s  d= 0.0002s
+  OK   FP8E4M3/Var0p5/gorilla_base                              ratio=0.8801  c=  36.30s  d= 0.0003s
+  OK   FP8E5M2/Var0p01/xor_delta                                ratio=0.1356  c=  38.22s  d= 0.0003s
+  OK   FP8E5M2/Var0p5/gorilla_base                              ratio=0.7757  c=  33.02s  d= 0.0003s
+  OK   FP8E4M3/Var0p01/xor_delta                                ratio=0.1383  c=  39.20s  d= 0.0003s
+  OK   FP8E4M3/Var0p25/xor_delta                                ratio=0.1383  c=  40.00s  d= 0.0002s
+  OK   FP8E5M2/Var0p05/gorilla_xor_delta                        ratio=0.1432  c=  46.02s  d= 0.0006s
+[13/42]  FP8E5M2/Var0p05  → 7 records written  (cumulative 91/294, elapsed 1102s)
+  OK   FP8E5M2/Var0p25/gorilla_xor_delta                        ratio=0.1432  c=  42.23s  d= 0.0003s
+[14/42]  FP8E5M2/Var0p25  → 7 records written  (cumulative 98/294, elapsed 1102s)
+  OK   FP8E5M2/Var0p025/xor_delta                               ratio=0.1356  c=  36.16s  d= 0.0003s
+  OK   FP8E4M3/Var0p05/gorilla_xor_delta                        ratio=0.1471  c=  42.68s  d= 0.0004s
+[15/42]  FP8E4M3/Var0p05  → 7 records written  (cumulative 105/294, elapsed 1110s)
+  OK   FP8E4M3/Var0p025/gorilla_xor_delta                       ratio=0.1471  c=  36.52s  d= 0.0002s
+[16/42]  FP8E4M3/Var0p025  → 7 records written  (cumulative 112/294, elapsed 1117s)
+  OK   FP8E5M2/Var0p1/gorilla_xor_delta                         ratio=0.1432  c=  37.16s  d= 0.0003s
+[17/42]  FP8E5M2/Var0p1  → 7 records written  (cumulative 119/294, elapsed 1119s)
+  OK   FP8E4M3/Var0p5/xor_delta                                 ratio=0.1383  c=  32.49s  d= 0.0002s
+  OK   FP8E5M2/Var0p5/xor_delta                                 ratio=0.1356  c=  31.97s  d= 0.0003s
+  OK   FP8E4M3/Var0p1/gorilla_xor_delta                         ratio=0.1471  c=  40.78s  d= 0.0004s
+[18/42]  FP8E4M3/Var0p1  → 7 records written  (cumulative 126/294, elapsed 1127s)
+  OK   FP8E5M2/Var0p01/gorilla_xor_delta                        ratio=0.1432  c=  36.92s  d= 0.0002s
+[19/42]  FP8E5M2/Var0p01  → 7 records written  (cumulative 133/294, elapsed 1130s)
+  OK   FP8E4M3/Var0p01/gorilla_xor_delta                        ratio=0.1471  c=  36.97s  d= 0.0002s
+[20/42]  FP8E4M3/Var0p01  → 7 records written  (cumulative 140/294, elapsed 1132s)
+  OK   FP8E4M3/Var0p25/gorilla_xor_delta                        ratio=0.1471  c=  35.80s  d= 0.0002s
+[21/42]  FP8E4M3/Var0p25  → 7 records written  (cumulative 147/294, elapsed 1137s)
+  OK   FP8E5M2/Var0p025/gorilla_xor_delta                       ratio=0.1432  c=  33.45s  d= 0.0003s
+[22/42]  FP8E5M2/Var0p025  → 7 records written  (cumulative 154/294, elapsed 1140s)
+  OK   FP8E4M3/Var0p5/gorilla_xor_delta                         ratio=0.1471  c=  29.99s  d= 0.0002s
+[23/42]  FP8E4M3/Var0p5  → 7 records written  (cumulative 161/294, elapsed 1155s)
+  OK   FP8E5M2/Var0p5/gorilla_xor_delta                         ratio=0.1432  c=  29.91s  d= 0.0003s
+[24/42]  FP8E5M2/Var0p5  → 7 records written  (cumulative 168/294, elapsed 1158s)
+  OK   BF16E8M7/Var0p25/semantic_sep                            ratio=0.7101  c=1525.49s  d= 0.0029s
+  OK   BF16E8M7/Var0p5/semantic_sep                             ratio=0.7055  c=1530.85s  d= 0.0038s
+  OK   FP16E5M10/Var0p05/semantic_sep                           ratio=0.8906  c=1533.50s  d= 0.0034s
+  OK   FP16E5M10/Var0p025/semantic_sep                          ratio=0.8978  c=1551.38s  d= 0.0037s
+  OK   BF16E8M7/Var0p1/semantic_sep                             ratio=0.7188  c=1535.85s  d= 0.0034s
+  OK   FP16E5M10/Var0p25/semantic_sep                           ratio=0.8736  c=1537.64s  d= 0.0035s
+  OK   FP16E5M10/Var0p5/semantic_sep                            ratio=0.8662  c=1546.25s  d= 0.0047s
+  OK   BF16E8M7/Var0p01/semantic_sep                            ratio=0.7285  c=1564.33s  d= 0.0034s
+  OK   FP16E5M10/Var0p01/semantic_sep                           ratio=0.8922  c=1555.20s  d= 0.0043s
+  OK   BF16E8M7/Var0p025/semantic_sep                           ratio=0.7340  c=1552.43s  d= 0.0035s
+  OK   BF16E8M7/Var0p05/semantic_sep                            ratio=0.7269  c=1558.83s  d= 0.0033s
+  OK   FP16E5M10/Var0p1/semantic_sep                            ratio=0.8824  c=1553.87s  d= 0.0038s
+  OK   BF16E8M7/Var0p25/bitplane                                ratio=0.7101  c=1008.88s  d= 0.0024s
+  OK   FP16E5M10/Var0p05/bitplane                               ratio=0.8906  c=1009.66s  d= 0.0026s
+  OK   BF16E8M7/Var0p5/bitplane                                 ratio=0.7055  c=1011.18s  d= 0.0026s
+  OK   FP16E5M10/Var0p025/bitplane                              ratio=0.8978  c=1010.72s  d= 0.0025s
+  OK   BF16E8M7/Var0p1/bitplane                                 ratio=0.7188  c=1011.02s  d= 0.0024s
+  OK   FP16E5M10/Var0p25/bitplane                               ratio=0.8736  c=1007.44s  d= 0.0025s
+  OK   FP16E5M10/Var0p5/bitplane                                ratio=0.8662  c=1007.90s  d= 0.0027s
+  OK   BF16E8M7/Var0p01/bitplane                                ratio=0.7285  c=1004.10s  d= 0.0022s
+  OK   FP16E5M10/Var0p01/bitplane                               ratio=0.8922  c=1009.19s  d= 0.0024s
+  OK   BF16E8M7/Var0p05/bitplane                                ratio=0.7269  c=1008.49s  d= 0.0024s
+  OK   BF16E8M7/Var0p025/bitplane                               ratio=0.7340  c=1012.91s  d= 0.0022s
+  OK   FP16E5M10/Var0p1/bitplane                                ratio=0.8824  c=1009.57s  d= 0.0025s
+  OK   BF16E8M7/Var0p25/gorilla_base                            ratio=0.8036  c=  40.31s  d= 0.0002s
+  OK   FP16E5M10/Var0p05/gorilla_base                           ratio=0.9401  c=  38.76s  d= 0.0002s
+  OK   BF16E8M7/Var0p5/gorilla_base                             ratio=0.7985  c=  38.93s  d= 0.0002s
+  OK   FP16E5M10/Var0p025/gorilla_base                          ratio=0.9454  c=  38.51s  d= 0.0002s
+  OK   BF16E8M7/Var0p1/gorilla_base                             ratio=0.8032  c=  38.48s  d= 0.0002s
+  OK   FP16E5M10/Var0p25/gorilla_base                           ratio=0.9429  c=  38.46s  d= 0.0002s
+  OK   FP16E5M10/Var0p5/gorilla_base                            ratio=0.9395  c=  38.08s  d= 0.0002s
+  OK   BF16E8M7/Var0p01/gorilla_base                            ratio=0.8182  c=  37.81s  d= 0.0002s
+  OK   FP16E5M10/Var0p01/gorilla_base                           ratio=0.9516  c=  37.94s  d= 0.0002s
+  OK   BF16E8M7/Var0p05/gorilla_base                            ratio=0.8004  c=  38.70s  d= 0.0002s
+  OK   BF16E8M7/Var0p025/gorilla_base                           ratio=0.8086  c=  38.84s  d= 0.0002s
+  OK   FP16E5M10/Var0p1/gorilla_base                            ratio=0.9445  c=  38.62s  d= 0.0001s
+  OK   BF16E8M7/Var0p25/xor_delta                               ratio=0.1321  c=  49.80s  d= 0.0002s
+  OK   BF16E8M7/Var0p5/xor_delta                                ratio=0.1321  c=  51.74s  d= 0.0002s
+  OK   FP16E5M10/Var0p05/xor_delta                              ratio=0.1341  c=  52.51s  d= 0.0002s
+  OK   FP16E5M10/Var0p025/xor_delta                             ratio=0.1341  c=  50.86s  d= 0.0002s
+  OK   BF16E8M7/Var0p1/xor_delta                                ratio=0.1321  c=  53.28s  d= 0.0002s
+  OK   FP16E5M10/Var0p5/xor_delta                               ratio=0.1341  c=  52.68s  d= 0.0002s
+  OK   FP16E5M10/Var0p25/xor_delta                              ratio=0.1341  c=  53.97s  d= 0.0002s
+  OK   BF16E8M7/Var0p01/xor_delta                               ratio=0.1322  c=  53.70s  d= 0.0002s
+  OK   FP16E5M10/Var0p01/xor_delta                              ratio=0.1341  c=  55.35s  d= 0.0002s
+  OK   BF16E8M7/Var0p05/xor_delta                               ratio=0.1321  c=  54.35s  d= 0.0002s
+  OK   BF16E8M7/Var0p025/xor_delta                              ratio=0.1322  c=  52.05s  d= 0.0002s
+  OK   FP16E5M10/Var0p1/xor_delta                               ratio=0.1341  c=  52.77s  d= 0.0002s
+  OK   BF16E8M7/Var0p25/gorilla_xor_delta                       ratio=0.1392  c=  55.33s  d= 0.0002s
+[25/42]  BF16E8M7/Var0p25  → 7 records written  (cumulative 175/294, elapsed 2869s)
+  OK   FP16E5M10/Var0p025/gorilla_xor_delta                     ratio=0.1432  c=  50.14s  d= 0.0002s
+[26/42]  FP16E5M10/Var0p025  → 7 records written  (cumulative 182/294, elapsed 2876s)
+  OK   BF16E8M7/Var0p5/gorilla_xor_delta                        ratio=0.1391  c=  52.63s  d= 0.0002s
+[27/42]  BF16E8M7/Var0p5  → 7 records written  (cumulative 189/294, elapsed 2878s)
+  OK   FP16E5M10/Var0p05/gorilla_xor_delta                      ratio=0.1431  c=  53.18s  d= 0.0002s
+[28/42]  FP16E5M10/Var0p05  → 7 records written  (cumulative 196/294, elapsed 2879s)
+  OK   BF16E8M7/Var0p1/gorilla_xor_delta                        ratio=0.1391  c=  49.25s  d= 0.0002s
+[29/42]  BF16E8M7/Var0p1  → 7 records written  (cumulative 203/294, elapsed 2879s)
+  OK   FP16E5M10/Var0p5/gorilla_xor_delta                       ratio=0.1431  c=  49.00s  d= 0.0001s
+[30/42]  FP16E5M10/Var0p5  → 7 records written  (cumulative 210/294, elapsed 2882s)
+  OK   FP16E5M10/Var0p25/gorilla_xor_delta                      ratio=0.1431  c=  49.69s  d= 0.0002s
+[31/42]  FP16E5M10/Var0p25  → 7 records written  (cumulative 217/294, elapsed 2883s)
+  OK   BF16E8M7/Var0p01/gorilla_xor_delta                       ratio=0.1394  c=  46.07s  d= 0.0002s
+[32/42]  BF16E8M7/Var0p01  → 7 records written  (cumulative 224/294, elapsed 2887s)
+  OK   FP16E5M10/Var0p01/gorilla_xor_delta                      ratio=0.1432  c=  43.64s  d= 0.0001s
+[33/42]  FP16E5M10/Var0p01  → 7 records written  (cumulative 231/294, elapsed 2892s)
+  OK   BF16E8M7/Var0p05/gorilla_xor_delta                       ratio=0.1391  c=  42.82s  d= 0.0001s
+[34/42]  BF16E8M7/Var0p05  → 7 records written  (cumulative 238/294, elapsed 2894s)
+  OK   BF16E8M7/Var0p025/gorilla_xor_delta                      ratio=0.1393  c=  42.83s  d= 0.0002s
+[35/42]  BF16E8M7/Var0p025  → 7 records written  (cumulative 245/294, elapsed 2895s)
+  OK   FP16E5M10/Var0p1/gorilla_xor_delta                       ratio=0.1431  c=  42.38s  d= 0.0001s
+[36/42]  FP16E5M10/Var0p1  → 7 records written  (cumulative 252/294, elapsed 2895s)
+  OK   FP32E8M23/Var0p01/semantic_sep                           ratio=0.8642  c=5232.28s  d= 0.0042s
+  OK   FP32E8M23/Var0p1/semantic_sep                            ratio=0.8594  c=5226.31s  d= 0.0042s
+  OK   FP32E8M23/Var0p5/semantic_sep                            ratio=0.8527  c=5254.88s  d= 0.0045s
+  OK   FP32E8M23/Var0p025/semantic_sep                          ratio=0.8670  c=5270.25s  d= 0.0045s
+  OK   FP32E8M23/Var0p05/semantic_sep                           ratio=0.8635  c=5248.15s  d= 0.0041s
+  OK   FP32E8M23/Var0p25/semantic_sep                           ratio=0.8551  c=5258.30s  d= 0.0043s
+  OK   FP32E8M23/Var0p025/bitplane                              ratio=0.8670  c=3778.80s  d= 0.0033s
+  OK   FP32E8M23/Var0p01/bitplane                               ratio=0.8642  c=3814.62s  d= 0.0032s
+  OK   FP32E8M23/Var0p1/bitplane                                ratio=0.8594  c=3822.63s  d= 0.0034s
+  OK   FP32E8M23/Var0p5/bitplane                                ratio=0.8527  c=3819.81s  d= 0.0035s
+  OK   FP32E8M23/Var0p025/gorilla_base                          ratio=0.9404  c=  48.20s  d= 0.0001s
+  OK   FP32E8M23/Var0p25/bitplane                               ratio=0.8551  c=3825.47s  d= 0.0033s
+  OK   FP32E8M23/Var0p05/bitplane                               ratio=0.8635  c=3832.21s  d= 0.0033s
+  OK   FP32E8M23/Var0p01/gorilla_base                           ratio=0.9443  c=  48.05s  d= 0.0001s
+  OK   FP32E8M23/Var0p1/gorilla_base                            ratio=0.9386  c=  47.89s  d= 0.0001s
+  OK   FP32E8M23/Var0p5/gorilla_base                            ratio=0.9360  c=  48.11s  d= 0.0001s
+  OK   FP32E8M23/Var0p25/gorilla_base                           ratio=0.9391  c=  48.63s  d= 0.0001s
+  OK   FP32E8M23/Var0p05/gorilla_base                           ratio=0.9370  c=  49.24s  d= 0.0001s
+  OK   FP32E8M23/Var0p025/xor_delta                             ratio=0.1338  c=  70.10s  d= 0.0002s
+  OK   FP32E8M23/Var0p01/xor_delta                              ratio=0.1338  c=  71.65s  d= 0.0002s
+  OK   FP32E8M23/Var0p1/xor_delta                               ratio=0.1338  c=  72.02s  d= 0.0002s
+  OK   FP32E8M23/Var0p5/xor_delta                               ratio=0.1338  c=  72.22s  d= 0.0002s
+  OK   FP32E8M23/Var0p25/xor_delta                              ratio=0.1338  c=  70.63s  d= 0.0002s
+  OK   FP32E8M23/Var0p05/xor_delta                              ratio=0.1338  c=  69.58s  d= 0.0002s
+  OK   FP32E8M23/Var0p025/gorilla_xor_delta                     ratio=0.1425  c=  73.46s  d= 0.0002s
+[37/42]  FP32E8M23/Var0p025  → 7 records written  (cumulative 259/294, elapsed 9692s)
+  OK   FP32E8M23/Var0p01/gorilla_xor_delta                      ratio=0.1426  c=  70.58s  d= 0.0002s
+[38/42]  FP32E8M23/Var0p01  → 7 records written  (cumulative 266/294, elapsed 9708s)
+  OK   FP32E8M23/Var0p1/gorilla_xor_delta                       ratio=0.1425  c=  68.26s  d= 0.0002s
+[39/42]  FP32E8M23/Var0p1  → 7 records written  (cumulative 273/294, elapsed 9723s)
+  OK   FP32E8M23/Var0p5/gorilla_xor_delta                       ratio=0.1424  c=  68.66s  d= 0.0002s
+[40/42]  FP32E8M23/Var0p5  → 7 records written  (cumulative 280/294, elapsed 9725s)
+  OK   FP32E8M23/Var0p25/gorilla_xor_delta                      ratio=0.1425  c=  67.61s  d= 0.0002s
+[41/42]  FP32E8M23/Var0p25  → 7 records written  (cumulative 287/294, elapsed 9737s)
+  OK   FP32E8M23/Var0p05/gorilla_xor_delta                      ratio=0.1424  c=  67.72s  d= 0.0001s
+[42/42]  FP32E8M23/Var0p05  → 7 records written  (cumulative 294/294, elapsed 9740s)
+
+All done.  Wall time: 9740.0s  (162.3 min)
+Results → /shared/home/erg966/LosslessModelCompression/compression_results_huffman.jsonl
