@@ -61,7 +61,7 @@ import numpy as np
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results_huffman.jsonl"
 
 CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB per chunk (set >> file size for one-shot)
