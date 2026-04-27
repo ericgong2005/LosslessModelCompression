@@ -2,49 +2,41 @@
 """
 Lossless compression benchmark for synthetic LLM weight datasets.
 Compression engine: naive canonical Huffman coding over byte (8-bit) symbols.
-No LZ77 / dictionary / context modelling — pure symbol-frequency entropy coding.
 
 Algorithms:
-  raw_huffman        Baseline: raw bytes → Huffman
+  raw_huffman        Baseline: raw bytes → Huffman  (single stream)
   byte_transpose     One Huffman stream per byte-plane
   semantic_sep       One Huffman stream per semantic field (sign / exp / mantissa)
   bitplane           One Huffman stream per bit-plane (MSB → LSB)
-  gorilla_base       Consecutive-element XOR → Huffman
+  gorilla_base       Consecutive-element XOR → Huffman  (single stream)
+  xor_delta          Base XOR Redraw → Huffman  (single stream)
+  gorilla_xor_delta  Gorilla on the XOR-delta stream → Huffman  (single stream)
 
-  xor_delta          Base XOR Redraw → Huffman
-  gorilla_xor_delta  Gorilla on the XOR-delta stream → Huffman
+Output schema per record:
+  format, variance, split, algorithm
+  timing:
+    compress_time_s    — total across all streams (weights + scales)
+    decompress_time_s  — total across all streams (weights + scales)
+  weights:
+    original_bytes, compressed_bytes, ratio   — totals across all streams
+    streams: { stream_name: { original_bytes, compressed_bytes, ratio,
+                               compress_time_s, decompress_time_s } }
+  scales:  (same structure; null fields when format has no scales)
 
-Huffman implementation details:
-  • Symbol alphabet : 256 byte values.
-  • Table scope     : one table per stream (per-plane for multi-stream algorithms),
-                      built from the frequency counts of the entire stream.
-  • Table overhead  : included in compressed_bytes (realistic self-contained size).
-                      Encoded as 256 × 1-byte code-length table (canonical Huffman),
-                      so table overhead is always exactly 256 bytes per stream.
-  • Compressed size : table_bytes + ceil(encoded_bits / 8).
-                      We compute the bit-length analytically (sum freq_i * codelength_i)
-                      and do NOT bitpack the output in memory — this avoids O(N) Python
-                      loops while still giving the exact compressed byte count.
-  • Timing          :
-      compress_time_s   = time to count frequencies + build tree + compute bit-length
-      decompress_time_s = time to rebuild tree from code-lengths + compute decoded
-                          byte count (i.e. original_bytes, trivially known).
-                          This captures the tree-reconstruction cost without
-                          the O(N) Python symbol-decode loop which would dominate
-                          and is not representative of a C implementation.
-
-Run policy:
-  raw_huffman, byte_transpose, semantic_sep, bitplane, gorilla_base → Base only
-  xor_delta, gorilla_xor_delta                                       → XOR_Delta
+For single-stream algorithms (raw_huffman, gorilla_base, xor_delta,
+gorilla_xor_delta) weights.streams has one entry keyed "data".
+For byte_transpose: entries keyed "b0", "b1", …
+For semantic_sep:   entries keyed "sign", "exp_bit7", …, "mant_bit0", …
+For bitplane:       entries keyed "bit31", "bit30", …, "bit0"
 
 Parallelism:
-  All 42 (format × variance) pairs run in a ProcessPoolExecutor with MAX_WORKERS
-  workers simultaneously. Each worker owns a unique directory.
-
-Output:
-  JSONL — one record per (format × variance × split × algorithm).
-  weights and scales entries always present; scales fields null/0 for
-  formats without a scales file.
+  Work items are (format, variance, algorithm) triples — 42 × 7 = 294 total.
+  They are submitted to the pool algorithm-by-algorithm so that faster
+  algorithms drain before slower ones pile up, but we don't wait for all
+  workers of one algorithm to finish before starting the next — as soon as
+  a worker slot is free the next item in sequence is dispatched.
+  MAX_WORKERS workers run concurrently; each worker owns a unique
+  (format, variance) file pair for the duration of its single algorithm trial.
 """
 
 import json
@@ -53,7 +45,8 @@ import heapq
 import time
 import traceback
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, Future
+from collections import defaultdict
 
 import numpy as np
 
@@ -61,14 +54,11 @@ import numpy as np
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
-OUTPUT_JSONL = Path(__file__).parent / "compression_results_huffman.jsonl"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+OUTPUT_JSONL = Path(__file__).parent / "compression_results_huffman_finegrained.jsonl"
 
-CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB per chunk (set >> file size for one-shot)
-MAX_WORKERS = 42                    # reduce if OOM; 6 covers 6 FP32 workers safely
-
-# Table overhead: 256 code-length bytes per stream (canonical Huffman header)
-_TABLE_BYTES = 256
+CHUNK_BYTES = 128 * 1024 * 1024   # set larger than any file for one-shot reads
+MAX_WORKERS = 42                    # safe for 69 GB node; raise if RAM allows
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset structure
@@ -76,9 +66,9 @@ _TABLE_BYTES = 256
 
 VARIANCES = ["Var0p01", "Var0p025", "Var0p05", "Var0p1", "Var0p25", "Var0p5"]
 
-_SINGLE_ALGOS = ["raw_huffman", "byte_transpose", "semantic_sep", "bitplane", "gorilla_base"]
-_DELTA_ALGOS  = ["xor_delta", "gorilla_xor_delta"]
-ALGORITHMS    = _SINGLE_ALGOS + _DELTA_ALGOS
+_DELTA_ALGOS  = {"xor_delta", "gorilla_xor_delta"}
+ALGORITHMS    = ["raw_huffman", "byte_transpose", "semantic_sep", "bitplane",
+                 "gorilla_base", "xor_delta", "gorilla_xor_delta"]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Format registry
@@ -141,64 +131,25 @@ def _uint_dtype(fmt: dict) -> np.dtype:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Huffman engine
-#
-# We work entirely with frequency counts and code-lengths.  We never bitpack
-# the encoded stream in Python — that would be O(N) in pure Python and
-# completely unrepresentative of a compiled implementation.  Instead:
-#
-#   compressed_bits  = sum(freq[sym] * codelength[sym]  for sym in alphabet)
-#   compressed_bytes = _TABLE_BYTES + ceil(compressed_bits / 8)
-#
-# This is the exact compressed size a correct implementation would produce.
-# Timing covers: frequency counting (numpy, fast) + tree building (heapq over
-# 256 nodes, negligible) + code-length assignment (tree walk, negligible).
-#
-# Decompression timing covers: rebuilding the canonical tree from the 256
-# code-length bytes (the only work a decoder must do before it can start
-# decoding symbols).  The actual symbol decode loop is O(N) and in Python
-# would be ~1000× slower than C, so we deliberately exclude it — just as the
-# compress side excludes the bitpack loop.
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _byte_frequencies(data: bytes) -> np.ndarray:
-    """Count occurrences of each byte value 0–255.  Returns uint64 array[256]."""
     arr  = np.frombuffer(data, dtype=np.uint8)
-    freq = np.bincount(arr, minlength=256).astype(np.uint64)
-    return freq
+    return np.bincount(arr, minlength=256).astype(np.uint64)
 
 
 def _build_huffman_lengths(freq: np.ndarray) -> list:
-    """
-    Build a Huffman tree from a frequency array and return code lengths.
-
-    Returns code_lengths: list[int] of length 256 where code_lengths[sym] is
-    the number of bits assigned to symbol sym (0 = symbol absent).
-
-    Uses a min-heap over (frequency, node_id) pairs.  Internal nodes store
-    the sum of their children's frequencies.  After tree construction we
-    walk the tree to assign depths (= code lengths).
-
-    Edge cases:
-      • If only one distinct symbol exists, assign it code length 1
-        (single-symbol Huffman still needs 1 bit per symbol).
-      • If no data, return all zeros.
-    """
-    # Only consider symbols that actually appear
     active = [(int(f), i) for i, f in enumerate(freq) if f > 0]
-
     if not active:
         return [0] * 256
-
     if len(active) == 1:
         lengths = [0] * 256
         lengths[active[0][1]] = 1
         return lengths
 
-    # Build min-heap: (freq, node_id)
-    # Internal nodes get ids starting at 256; children stored in a dict.
     heap     = list(active)
     heapq.heapify(heap)
-    children = {}   # node_id → (left_child_id, right_child_id)
+    children = {}
     next_id  = 256
 
     while len(heap) > 1:
@@ -209,9 +160,7 @@ def _build_huffman_lengths(freq: np.ndarray) -> list:
         children[parent] = (n1, n2)
         heapq.heappush(heap, (f1 + f2, parent))
 
-    root = heap[0][1]
-
-    # Walk tree to assign depths
+    root    = heap[0][1]
     lengths = [0] * 256
     stack   = [(root, 0)]
     while stack:
@@ -221,136 +170,175 @@ def _build_huffman_lengths(freq: np.ndarray) -> list:
             stack.append((l, depth + 1))
             stack.append((r, depth + 1))
         else:
-            # Leaf node: node id is the symbol byte value
             lengths[node] = depth
-
     return lengths
 
 
-def _compressed_size(freq: np.ndarray, lengths: list) -> int:
-    """
-    Compute the exact compressed output size in bytes.
-
-    compressed_bits  = sum over symbols of freq[sym] * codelength[sym]
-    compressed_bytes = _TABLE_BYTES + ceil(compressed_bits / 8)
-    """
-    bits = int(np.dot(freq.astype(np.int64),
-                      np.array(lengths, dtype=np.int64)))
-    return math.ceil(bits / 8)
-
-
-def _huffman_compress_stream(data: bytes) -> tuple:
-    """
-    'Compress' a byte stream with Huffman coding.
-
-    Returns (compressed_bytes, compress_time_s, decompress_time_s).
-
-    compress_time_s  : frequency counting + tree build + size computation.
-    decompress_time_s: canonical tree reconstruction from 256 code-lengths
-                       (what a real decoder does before decoding any symbol).
-    """
-    # ── Compression ──────────────────────────────────────────────────────────
-    t0   = time.perf_counter()
-    freq = _byte_frequencies(data)
-    lens = _build_huffman_lengths(freq)
-    comp = _compressed_size(freq, lens)
-    t_compress = time.perf_counter() - t0
-
-    # ── Decompression : rebuild canonical tree from lengths ───────────────────
-    # A canonical Huffman decoder reconstructs the decode table from the
-    # 256 code-length bytes using the standard canonical assignment algorithm.
-    # We time exactly this step.
-    t0 = time.perf_counter()
-    _rebuild_canonical_tree(lens)
-    t_decompress = time.perf_counter() - t0
-
-    return comp, t_compress, t_decompress
-
-
 def _rebuild_canonical_tree(lengths: list) -> dict:
-    """
-    Reconstruct canonical Huffman codes from a list of code lengths.
-
-    This is what a decoder does on startup before it can decode any symbol:
-      1. Sort symbols by code length.
-      2. Assign canonical codes (integer counters, incremented and shifted).
-      3. Build a lookup dict: code → symbol.
-
-    Returns decode_table: dict mapping (code_int, length) → symbol.
-    This is the minimal work a streaming decoder must do.
-    """
-    # Pair (length, symbol), skip absent symbols (length == 0)
-    syms_by_len = sorted(
-        [(l, s) for s, l in enumerate(lengths) if l > 0]
-    )
+    syms_by_len = sorted([(l, s) for s, l in enumerate(lengths) if l > 0])
     if not syms_by_len:
         return {}
-
     decode_table = {}
-    code         = 0
-    prev_len     = 0
+    code = prev_len = 0
     for length, sym in syms_by_len:
-        code <<= (length - prev_len)   # shift up when length increases
+        code <<= (length - prev_len)
         decode_table[(code, length)] = sym
         code    += 1
         prev_len = length
-
     return decode_table
 
 
+def _compressed_bytes_from_bits(bits: int) -> int:
+    return math.ceil(bits / 8)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
-# Accumulate frequencies across chunks, then encode once
+# Single-stream Huffman: returns a StreamResult dict
 #
-# Because Huffman needs global symbol frequencies to build an optimal code,
-# we make two passes over each stream:
-#   Pass 1 (count): read all chunks, accumulate freq[256].
-#   Pass 2 (encode): read all chunks again, apply the pre-built code lengths
-#                    to compute total compressed bits (chunk by chunk, O(1) RAM).
-#
-# This gives the same result as building the table on the full file.
-# The timing window covers both passes for compress, and tree-rebuild for decomp.
+# StreamResult = {
+#   "original_bytes":    int,
+#   "compressed_bytes":  int,
+#   "ratio":             float,
+#   "compress_time_s":   float,
+#   "decompress_time_s": float,
+# }
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _huffman_compress_chunked(chunk_iter_factory) -> tuple:
+def _huffman_one_stream(chunk_iter_factory) -> dict:
     """
-    Two-pass Huffman compression over a chunked stream.
-
-    chunk_iter_factory: zero-arg callable returning a fresh chunk iterator.
-    Returns (compressed_bytes, compress_time_s, decompress_time_s).
+    Two-pass Huffman over a single byte stream.
+    Pass 1: accumulate global frequencies.
+    Pass 2: compute total encoded bits using global code lengths.
     """
     t0 = time.perf_counter()
 
-    # Pass 1: accumulate global frequencies
-    global_freq = np.zeros(256, dtype=np.uint64)
-    n_bytes_total = 0
+    global_freq   = np.zeros(256, dtype=np.uint64)
+    n_orig        = 0
     for chunk in chunk_iter_factory():
         global_freq += _byte_frequencies(chunk)
-        n_bytes_total += len(chunk)
+        n_orig      += len(chunk)
 
-    # Build code lengths once from global frequencies
-    lens = _build_huffman_lengths(global_freq)
-
-    # Pass 2: compute total encoded bits chunk-by-chunk
+    lens     = _build_huffman_lengths(global_freq)
     lens_arr = np.array(lens, dtype=np.int64)
+
     total_bits = 0
     for chunk in chunk_iter_factory():
-        freq_chunk = _byte_frequencies(chunk)
-        total_bits += int(np.dot(freq_chunk.astype(np.int64), lens_arr))
+        total_bits += int(np.dot(_byte_frequencies(chunk).astype(np.int64), lens_arr))
 
-    comp = math.ceil(total_bits / 8)
+    n_comp     = _compressed_bytes_from_bits(total_bits)
     t_compress = time.perf_counter() - t0
 
-    # Decompression: rebuild canonical tree from the 256-byte header
     t0 = time.perf_counter()
     _rebuild_canonical_tree(lens)
     t_decompress = time.perf_counter() - t0
 
-    return comp, t_compress, t_decompress
+    return {
+        "original_bytes":    n_orig,
+        "compressed_bytes":  n_comp,
+        "ratio":             round(n_comp / n_orig, 6) if n_orig else None,
+        "compress_time_s":   t_compress,
+        "decompress_time_s": t_decompress,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Field-extraction generators (identical to Zstd version)
-# Each yields (name, bytes) one plane at a time — O(1) peak RAM per plane.
+# Multi-stream Huffman: returns dict of stream_name → StreamResult
+# plus aggregate original_bytes, compressed_bytes, ratio
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _huffman_multi_stream(field_chunks_iter_factory) -> dict:
+    """
+    Per-stream two-pass Huffman.
+
+    field_chunks_iter_factory: zero-arg callable → iterable of generators,
+      each generator yielding (name, bytes) for one chunk's streams.
+
+    Returns:
+      {
+        "original_bytes":   int,   # sum across streams
+        "compressed_bytes": int,   # sum across streams
+        "ratio":            float,
+        "streams": {
+          stream_name: StreamResult,
+          ...
+        }
+      }
+
+    For each stream s_idx we do:
+      Pass 1: accumulate global_freq by consuming only stream s_idx from
+              each chunk (advance-and-skip the generator).
+      Pass 2: compute encoded bits the same way.
+
+    This costs 2 × n_streams full file reads.  Peak RAM = one stream's data
+    at a time (generator yields one plane, we consume it, then discard).
+    """
+    # ── Discover stream names from the first chunk ────────────────────────────
+    stream_names = []
+    for field_gen in field_chunks_iter_factory():
+        for name, _ in field_gen:
+            stream_names.append(name)
+        break
+    if not stream_names:
+        return {"original_bytes": 0, "compressed_bytes": 0, "ratio": None,
+                "streams": {}}
+
+    n_streams    = len(stream_names)
+    stream_results = {}
+
+    for s_idx, s_name in enumerate(stream_names):
+        t0 = time.perf_counter()
+
+        # Pass 1: global frequencies for stream s_idx
+        global_freq = np.zeros(256, dtype=np.uint64)
+        n_orig      = 0
+        for field_gen in field_chunks_iter_factory():
+            for i, (_, data) in enumerate(field_gen):
+                if i == s_idx:
+                    global_freq += _byte_frequencies(data)
+                    n_orig      += len(data)
+                    break   # skip remaining streams in this chunk
+
+        lens     = _build_huffman_lengths(global_freq)
+        lens_arr = np.array(lens, dtype=np.int64)
+
+        # Pass 2: encoded bits for stream s_idx
+        total_bits = 0
+        for field_gen in field_chunks_iter_factory():
+            for i, (_, data) in enumerate(field_gen):
+                if i == s_idx:
+                    total_bits += int(
+                        np.dot(_byte_frequencies(data).astype(np.int64), lens_arr)
+                    )
+                    break
+
+        n_comp     = _compressed_bytes_from_bits(total_bits)
+        t_compress = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        _rebuild_canonical_tree(lens)
+        t_decompress = time.perf_counter() - t0
+
+        stream_results[s_name] = {
+            "original_bytes":    n_orig,
+            "compressed_bytes":  n_comp,
+            "ratio":             round(n_comp / n_orig, 6) if n_orig else None,
+            "compress_time_s":   t_compress,
+            "decompress_time_s": t_decompress,
+        }
+
+    total_orig = sum(v["original_bytes"]   for v in stream_results.values())
+    total_comp = sum(v["compressed_bytes"] for v in stream_results.values())
+
+    return {
+        "original_bytes":   total_orig,
+        "compressed_bytes": total_comp,
+        "ratio":            round(total_comp / total_orig, 6) if total_orig else None,
+        "streams":          stream_results,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Field-extraction generators (one plane at a time — O(1) RAM per plane)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _fields_byte_transpose(chunk: bytes, fmt: dict):
@@ -378,14 +366,13 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict):
         nibbles[0::2], nibbles[1::2] = lo, hi
         sign_bits = ((nibbles >> 3) & 1).astype(np.uint8)
         mag_bits  = (nibbles & 0x7).astype(np.uint8)
-        yield ("sign", np.packbits(sign_bits).tobytes())
-        del sign_bits
+        yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
         for b in (2, 1, 0):
             plane = ((mag_bits >> b) & 1).astype(np.uint8)
-            yield (f"mag_bit{b}", np.packbits(plane).tobytes())
+            yield (f"mag_bit{b}", np.packbits(plane).tobytes());  del plane
         return
 
-    if n_sign == 0 and n_mant == 0:
+    if n_sign == 0 and n_mant == 0:     # E8M0 — pure exponent byte
         yield ("exp", chunk)
         return
 
@@ -395,15 +382,13 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict):
 
     if n_sign:
         sign_bits = ((arr >> (bits - 1)) & 1).astype(np.uint8)
-        yield ("sign", np.packbits(sign_bits).tobytes())
-        del sign_bits
+        yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
 
     exp_mask = (1 << n_exp) - 1
     exp_vals = (arr >> n_mant) & exp_mask
     for b in range(n_exp - 1, -1, -1):
         plane = ((exp_vals >> b) & 1).astype(np.uint8)
-        yield (f"exp_bit{b}", np.packbits(plane).tobytes())
-        del plane
+        yield (f"exp_bit{b}", np.packbits(plane).tobytes());  del plane
     del exp_vals
 
     if n_mant:
@@ -411,8 +396,7 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict):
         mant_vals = arr & mant_mask
         for b in range(n_mant - 1, -1, -1):
             plane = ((mant_vals >> b) & 1).astype(np.uint8)
-            yield (f"mant_bit{b}", np.packbits(plane).tobytes())
-            del plane
+            yield (f"mant_bit{b}", np.packbits(plane).tobytes());  del plane
 
 
 def _fields_bitplane(chunk: bytes, fmt: dict):
@@ -422,15 +406,13 @@ def _fields_bitplane(chunk: bytes, fmt: dict):
     else:
         arr    = np.frombuffer(chunk, dtype=_uint_dtype(fmt))
         n_bits = fmt["uint_bits"]
-
     for bit_i in range(n_bits - 1, -1, -1):
         plane = ((arr >> bit_i) & 1).astype(np.uint8)
-        yield (f"bit{bit_i}", np.packbits(plane).tobytes())
-        del plane
+        yield (f"bit{bit_i}", np.packbits(plane).tobytes());  del plane
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Gorilla stateful coder
+# Gorilla
 # ──────────────────────────────────────────────────────────────────────────────
 
 class _Gorilla:
@@ -441,9 +423,9 @@ class _Gorilla:
     def feed(self, data: bytes) -> bytes:
         if not data:
             return b""
-        arr    = np.frombuffer(data, dtype=self._dt)
-        out    = arr.copy()
-        out[0] ^= self._prev
+        arr        = np.frombuffer(data, dtype=self._dt)
+        out        = arr.copy()
+        out[0]    ^= self._prev
         if len(arr) > 1:
             out[1:] ^= arr[:-1]
         self._prev = arr[-1]
@@ -451,216 +433,131 @@ class _Gorilla:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Multi-stream Huffman: one table per stream
+# Per-file compression dispatcher
 #
-# For multi-stream algorithms each stream (plane) is a separate byte sequence
-# with its own symbol distribution and its own Huffman table.
-#
-# Memory contract: two passes over the file per stream (count then encode).
-# Between streams only freq[256] and lens[256] are live — O(1) RAM per stream
-# on top of the raw file data.
-#
-# Each stream contributes:
-#   _TABLE_BYTES + ceil(encoded_bits / 8)
-# to the total compressed size.
+# Returns a "file_result" dict:
+#   single-stream algos:
+#     { "original_bytes", "compressed_bytes", "ratio",
+#       "compress_time_s", "decompress_time_s",
+#       "streams": { "data": StreamResult } }
+#   multi-stream algos:
+#     { "original_bytes", "compressed_bytes", "ratio",
+#       "compress_time_s", "decompress_time_s",
+#       "streams": { stream_name: StreamResult, ... } }
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _compress_multistream_huffman(field_chunks_iter_factory) -> tuple:
-    """
-    Huffman-compress a multi-stream algorithm.
+def _compress_file(algo: str, path: Path, redraw: Path, fmt: dict) -> dict:
 
-    field_chunks_iter_factory: zero-arg callable returning an iterable where
-      each element is a generator of (name, bytes) tuples for one chunk.
-
-    Strategy: collect all chunks' data for one stream at a time across the
-    whole file, build one Huffman table per stream, compute compressed size.
-
-    Because we cannot interleave streams across chunks (stream 0 of chunk 1
-    must be combined with stream 0 of chunk 2 to get global frequencies),
-    we do:
-      - One full file pass per stream to accumulate frequencies.
-      - One full file pass per stream to compute encoded bits.
-
-    This costs 2 × n_streams file reads, which for semantic_sep FP32 is
-    64 reads of a 4 GB file.  If that's too slow in practice, a single-pass
-    approximation (per-chunk table) is straightforward to substitute.
-
-    Returns (total_compressed_bytes, compress_time_s, decompress_time_s).
-    """
-    t_compress   = 0.0
-    t_decompress = 0.0
-    total_comp   = 0
-
-    # ── Discover stream names from the first chunk ────────────────────────────
-    stream_names = []
-    for field_gen in field_chunks_iter_factory():
-        for name, _ in field_gen:
-            stream_names.append(name)
-        break   # only need first chunk to learn the stream order
-
-    if not stream_names:
-        return 0, 0.0, 0.0
-
-    n_streams = len(stream_names)
-
-    # ── One Huffman table per stream ─────────────────────────────────────────
-    for s_idx in range(n_streams):
-        t0 = time.perf_counter()
-
-        # Pass 1: accumulate global freq for stream s_idx
-        global_freq = np.zeros(256, dtype=np.uint64)
-        for field_gen in field_chunks_iter_factory():
-            for i, (_, data) in enumerate(field_gen):
-                if i == s_idx:
-                    global_freq += _byte_frequencies(data)
-                    break   # skip remaining streams in this chunk
-
-        lens     = _build_huffman_lengths(global_freq)
-        lens_arr = np.array(lens, dtype=np.int64)
-
-        # Pass 2: accumulate encoded bits for stream s_idx
-        total_bits = 0
-        for field_gen in field_chunks_iter_factory():
-            for i, (_, data) in enumerate(field_gen):
-                if i == s_idx:
-                    freq_chunk = _byte_frequencies(data)
-                    total_bits += int(np.dot(freq_chunk.astype(np.int64), lens_arr))
-                    break
-
-        total_comp += math.ceil(total_bits / 8)
-        t_compress += time.perf_counter() - t0
-
-        # Decompress: rebuild canonical tree (this is per-stream)
-        t0 = time.perf_counter()
-        _rebuild_canonical_tree(lens)
-        t_decompress += time.perf_counter() - t0
-
-    return total_comp, t_compress, t_decompress
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Per-algorithm dispatch
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _run_algo(algo: str, path: Path, redraw: Path, fmt: dict) -> tuple:
-    """Returns (compressed_bytes, compress_time_s, decompress_time_s)."""
-
-    # ── Multi-stream ─────────────────────────────────────────────────────────
+    # ── Multi-stream ──────────────────────────────────────────────────────────
     if algo == "byte_transpose":
-        return _compress_multistream_huffman(
+        res = _huffman_multi_stream(
             lambda: (_fields_byte_transpose(c, fmt) for c in _read_chunks(path)))
 
-    if algo == "semantic_sep":
-        return _compress_multistream_huffman(
+    elif algo == "semantic_sep":
+        res = _huffman_multi_stream(
             lambda: (_fields_semantic_sep(c, fmt) for c in _read_chunks(path)))
 
-    if algo == "bitplane":
-        return _compress_multistream_huffman(
+    elif algo == "bitplane":
+        res = _huffman_multi_stream(
             lambda: (_fields_bitplane(c, fmt) for c in _read_chunks(path)))
 
-    # ── Single-stream ────────────────────────────────────────────────────────
-    if algo == "raw_huffman":
-        return _huffman_compress_chunked(lambda: _read_chunks(path))
+    # ── Single-stream ─────────────────────────────────────────────────────────
+    elif algo == "raw_huffman":
+        sr  = _huffman_one_stream(lambda: _read_chunks(path))
+        res = {**sr, "streams": {"data": sr}}
 
-    if algo == "gorilla_base":
-        g = _Gorilla(fmt)
-        return _huffman_compress_chunked(
-            lambda: (g.feed(c) for c in _read_chunks(path)))
+    elif algo == "gorilla_base":
+        g   = _Gorilla(fmt)
+        sr  = _huffman_one_stream(lambda: (g.feed(c) for c in _read_chunks(path)))
+        res = {**sr, "streams": {"data": sr}}
 
-    if algo == "xor_delta":
-        return _huffman_compress_chunked(lambda: (
+    elif algo == "xor_delta":
+        sr  = _huffman_one_stream(lambda: (
             (np.frombuffer(a, np.uint8) ^ np.frombuffer(b, np.uint8)).tobytes()
             for a, b in _read_dual_chunks(path, redraw)
         ))
+        res = {**sr, "streams": {"data": sr}}
 
-    if algo == "gorilla_xor_delta":
+    elif algo == "gorilla_xor_delta":
         g = _Gorilla(fmt)
-        def _gen():
+        def _gxd():
             for a, b in _read_dual_chunks(path, redraw):
                 xb = (np.frombuffer(a, np.uint8) ^ np.frombuffer(b, np.uint8)).tobytes()
                 yield g.feed(xb)
-        return _huffman_compress_chunked(lambda: _gen())
+        sr  = _huffman_one_stream(lambda: _gxd())
+        res = {**sr, "streams": {"data": sr}}
 
-    raise ValueError(f"Unknown algorithm: {algo!r}")
+    else:
+        raise ValueError(f"Unknown algorithm: {algo!r}")
+
+    # Attach aggregate timing (sum of per-stream timings = total work)
+    res["compress_time_s"]   = sum(
+        s["compress_time_s"]   for s in res["streams"].values())
+    res["decompress_time_s"] = sum(
+        s["decompress_time_s"] for s in res["streams"].values())
+
+    return res
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Single trial
+# Single trial — one (format, variance, algorithm)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _run_trial(fmt: dict, var: str, algo: str) -> dict:
-    base_dir   = RESULTS_DIR / fmt["name"] / var / "Base"
-    redraw_dir = RESULTS_DIR / fmt["name"] / var / "Redraw0p01"
+def _run_trial(fmt_name: str, var: str, algo: str) -> dict:
+    fmt        = _FMT_BY_NAME[fmt_name]
+    base_dir   = RESULTS_DIR / fmt_name / var / "Base"
+    redraw_dir = RESULTS_DIR / fmt_name / var / "Redraw0p01"
     base_wp    = base_dir   / "weights.bin"
     redraw_wp  = redraw_dir / "weights.bin"
 
     split = "XOR_Delta" if algo in _DELTA_ALGOS else "Base"
 
-    w_orig             = base_wp.stat().st_size
-    w_comp, w_tc, w_td = _run_algo(algo, base_wp, redraw_wp, fmt)
+    w_res = _compress_file(algo, base_wp, redraw_wp, fmt)
 
-    s_orig = s_comp = 0
-    s_tc   = s_td   = None
-
+    # Scales
     if fmt["has_scales"]:
-        base_sp    = base_dir   / "scales.bin"
-        redraw_sp  = redraw_dir / "scales.bin"
-        s_orig             = base_sp.stat().st_size
-        s_comp, s_tc, s_td = _run_algo(algo, base_sp, redraw_sp, fmt["scale_fmt"])
+        base_sp  = base_dir   / "scales.bin"
+        redraw_sp = redraw_dir / "scales.bin"
+        s_res = _compress_file(algo, base_sp, redraw_sp, fmt["scale_fmt"])
+    else:
+        s_res = {
+            "original_bytes": 0, "compressed_bytes": 0, "ratio": None,
+            "compress_time_s": None, "decompress_time_s": None,
+            "streams": {},
+        }
 
-    def _ratio(comp, orig):
-        return round(comp / orig, 6) if orig > 0 else None
+    # Top-level timing = weights + scales combined
+    s_tc = s_res["compress_time_s"]
+    s_td = s_res["decompress_time_s"]
+    total_compress   = w_res["compress_time_s"]   + (s_tc or 0.0)
+    total_decompress = w_res["decompress_time_s"] + (s_td or 0.0)
 
     return dict(
-        format    = fmt["name"],
+        format    = fmt_name,
         variance  = var,
         split     = split,
         algorithm = algo,
+        timing    = dict(
+            compress_time_s   = total_compress,
+            decompress_time_s = total_decompress,
+        ),
         weights   = dict(
-            original_bytes    = w_orig,
-            compressed_bytes  = w_comp,
-            ratio             = _ratio(w_comp, w_orig),
-            compress_time_s   = w_tc,
-            decompress_time_s = w_td,
+            original_bytes    = w_res["original_bytes"],
+            compressed_bytes  = w_res["compressed_bytes"],
+            ratio             = w_res["ratio"],
+            compress_time_s   = w_res["compress_time_s"],
+            decompress_time_s = w_res["decompress_time_s"],
+            streams           = w_res["streams"],
         ),
         scales    = dict(
-            original_bytes    = s_orig,
-            compressed_bytes  = s_comp,
-            ratio             = _ratio(s_comp, s_orig),
+            original_bytes    = s_res["original_bytes"],
+            compressed_bytes  = s_res["compressed_bytes"],
+            ratio             = s_res["ratio"],
             compress_time_s   = s_tc,
             decompress_time_s = s_td,
+            streams           = s_res["streams"],
         ),
     )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Worker
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _run_fmt_var(fmt_name: str, var: str) -> list:
-    fmt     = _FMT_BY_NAME[fmt_name]
-    records = []
-
-    for algo in ALGORITHMS:
-        label = f"{fmt_name}/{var}/{algo}"
-        try:
-            rec = _run_trial(fmt, var, algo)
-            records.append(rec)
-            w = rec["weights"]
-            print(
-                f"  OK   {label:<55s}  "
-                f"ratio={w['ratio']:.4f}  "
-                f"c={w['compress_time_s']:7.2f}s  "
-                f"d={w['decompress_time_s']:7.4f}s",
-                flush=True,
-            )
-        except FileNotFoundError as exc:
-            print(f"  SKIP {label}  [{exc}]", flush=True)
-        except Exception as exc:
-            print(f"  ERR  {label}  [{exc}]", flush=True)
-            traceback.print_exc()
-
-    return records
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -668,10 +565,16 @@ def _run_fmt_var(fmt_name: str, var: str) -> list:
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    work_items = [(fmt["name"], var) for fmt in FORMATS for var in VARIANCES]
-    assert len(work_items) == 42
-
-    n_total = len(ALGORITHMS) * len(work_items)
+    # Build work items ordered algorithm-first so that faster algorithms drain
+    # before slower ones, minimising idle worker time.
+    # Order: algorithm (outer) × format × variance (inner)
+    work_items = [
+        (fmt["name"], var, algo)
+        for algo in ALGORITHMS
+        for fmt  in FORMATS
+        for var  in VARIANCES
+    ]
+    n_total = len(work_items)   # 7 × 7 × 6 = 294
 
     print(
         f"Output       : {OUTPUT_JSONL}\n"
@@ -686,37 +589,39 @@ def main():
 
     wall_start    = time.perf_counter()
     n_records_out = 0
-    n_pairs_done  = 0
 
     with open(OUTPUT_JSONL, "w") as out_fh:
         with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            future_to_key = {
-                pool.submit(_run_fmt_var, fmt_name, var): (fmt_name, var)
-                for fmt_name, var in work_items
+            # Submit all work items in algorithm-first order.
+            # as_completed returns futures as they finish (any order),
+            # but submission order is algorithm-first so the pool fills up
+            # with same-algorithm work first.
+            future_to_key: dict[Future, tuple] = {
+                pool.submit(_run_trial, fmt_name, var, algo): (fmt_name, var, algo)
+                for fmt_name, var, algo in work_items
             }
+
             for fut in as_completed(future_to_key):
-                fmt_name, var = future_to_key[fut]
-                n_pairs_done += 1
+                fmt_name, var, algo = future_to_key[fut]
                 elapsed = time.perf_counter() - wall_start
                 try:
-                    records = fut.result()
-                    for rec in records:
-                        out_fh.write(json.dumps(rec) + "\n")
+                    rec = fut.result()
+                    out_fh.write(json.dumps(rec) + "\n")
                     out_fh.flush()
-                    n_records_out += len(records)
+                    n_records_out += 1
+                    w = rec["weights"]
                     print(
-                        f"[{n_pairs_done:2d}/42]  {fmt_name}/{var}  "
-                        f"→ {len(records)} records written  "
-                        f"(cumulative {n_records_out}/{n_total}, "
-                        f"elapsed {elapsed:.0f}s)",
+                        f"[{n_records_out:3d}/{n_total}]  "
+                        f"{fmt_name}/{var}/{algo:<22s}  "
+                        f"ratio={w['ratio']:.4f}  "
+                        f"c={rec['timing']['compress_time_s']:7.2f}s  "
+                        f"elapsed={elapsed:.0f}s",
                         flush=True,
                     )
+                except FileNotFoundError as exc:
+                    print(f"  SKIP {fmt_name}/{var}/{algo}  [{exc}]", flush=True)
                 except Exception as exc:
-                    print(
-                        f"[{n_pairs_done:2d}/42]  {fmt_name}/{var}  "
-                        f"WORKER FAILED — {exc}",
-                        flush=True,
-                    )
+                    print(f"  ERR  {fmt_name}/{var}/{algo}  [{exc}]", flush=True)
                     traceback.print_exc()
 
     total_elapsed = time.perf_counter() - wall_start
