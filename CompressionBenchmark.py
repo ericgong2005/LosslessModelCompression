@@ -63,7 +63,7 @@ MAX_WORKERS = 42
 
 VARIANCES = ["Var0p01", "Var0p025", "Var0p05", "Var0p1", "Var0p25", "Var0p5"]
 
-ZSTD_LEVELS = [1, 19]
+ZSTD_LEVELS = [1]
 
 ALGORITHMS = [
     "raw_zstd",
