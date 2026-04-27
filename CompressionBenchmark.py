@@ -46,7 +46,7 @@ import zstandard as zstd
 # Tuneable constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
 
 # 128 MB streaming window keeps peak per-worker RAM ≲ ~300 MB even for
