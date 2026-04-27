@@ -54,7 +54,7 @@ import numpy as np
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results_huffman_finegrained.jsonl"
 
 CHUNK_BYTES = 128 * 1024 * 1024   # set larger than any file for one-shot reads

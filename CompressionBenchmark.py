@@ -1,46 +1,55 @@
 #!/usr/bin/env python3
 """
 Lossless compression benchmark for synthetic LLM weight datasets.
+Compression engine: Zstandard (zstd) level 1.
 
-Algorithms tested (all at Zstd level 1):
+Algorithms:
   raw_zstd           Baseline: raw bytes → single Zstd stream
   byte_transpose     One Zstd stream per byte-plane
   semantic_sep       One Zstd stream per semantic field (sign / exp / mantissa)
   bitplane           One Zstd stream per bit-plane (MSB → LSB)
   gorilla_base       Consecutive-element XOR → single Zstd stream
+  xor_delta          Base XOR Redraw → single Zstd stream
+  gorilla_xor_delta  Gorilla on the XOR-delta stream → single Zstd stream
 
-  xor_delta          Base XOR Redraw bytes → single Zstd stream
-  gorilla_xor_delta  Gorilla applied to the XOR-delta stream → single Zstd stream
+Output schema per record  (identical to Huffman v2):
+  format, variance, split, algorithm, zstd_level
+  timing:
+    compress_time_s    — total across all streams (weights + scales)
+    decompress_time_s  — total across all streams (weights + scales)
+  weights:
+    original_bytes, compressed_bytes, ratio   — totals across all streams
+    compress_time_s, decompress_time_s        — totals across all streams
+    streams: { stream_name: { original_bytes, compressed_bytes, ratio,
+                               compress_time_s, decompress_time_s } }
+  scales:  (same structure; null / empty when format has no scales)
 
-Run policy:
-  raw_zstd, byte_transpose, semantic_sep, bitplane, gorilla_base
-      → Base split only (Redraw ignored)
-  xor_delta, gorilla_xor_delta
-      → XOR_Delta split (reads both Base and Redraw)
+For single-stream algorithms weights.streams has one entry keyed "data".
+For byte_transpose: entries keyed "b0", "b1", …
+For semantic_sep:   entries keyed "sign", "exp_bit7", …, "mant_bit0", …
+For bitplane:       entries keyed "bit31", "bit30", …, "bit0"
 
-Multi-stream algorithms (byte_transpose, semantic_sep, bitplane):
-  Each portion is compressed independently and sequentially.
-  compress_time_s   = time to extract all portions + compress each portion
-  decompress_time_s = time to decompress each portion + re-interleave
-  compressed_bytes  = sum of all portion compressed sizes
+Differences vs. the original Zstd script:
+  1. Per-stream compressed_bytes, ratio, compress_time_s, decompress_time_s
+     are now logged individually under weights.streams / scales.streams.
+  2. top-level timing dict added (weights + scales combined).
+  3. Parallelism changed from (format × variance) workers running all
+     algorithms, to (format × variance × algorithm) work items submitted
+     algorithm-first — matches Huffman v2 so slow algorithms don't block
+     fast ones from completing.
+  4. _run_trial signature takes fmt_name: str (picklable) instead of fmt: dict.
+  5. Decompress timing for multi-stream: re-compress each stream's data to
+     obtain the blob, then time zstd decompress — one stream at a time,
+     O(1) peak RAM.
 
 Bit-packing / no-padding rule (semantic_sep, bitplane):
-  Each field's bits across ALL elements in a chunk are concatenated into one
-  raw bit sequence and then np.packbits'd into bytes — no per-element or
-  per-field zero-padding.  Chunk sizes are always a multiple of 8 bits for
-  every field (smallest element = 4 bits, chunk = 128 MB = 2^27 bytes,
-  so even the 1-bit sign field has 2^27 bits per chunk — byte-aligned).
+  Each field's bits across all elements in a chunk are np.packbits'd into
+  bytes with no per-element padding.  Chunk sizes guarantee byte-alignment.
 
 Parallelism:
-  All 42 (format × variance) pairs run simultaneously in a ProcessPoolExecutor
-  with MAX_WORKERS = 42.  Each worker owns a unique directory so no two
-  workers ever touch the same file.  No individual Zstd call is internally
-  parallelised (threads = 0 / default single-threaded).
-
-Output:
-  JSONL — one record per (format × variance × split × algorithm).
-  weights and scales entries are always present; scales fields are null/0
-  for formats without a scales file.
+  Work items are (format, variance, algorithm) triples submitted algorithm-
+  first. MAX_WORKERS workers run concurrently; each owns a unique
+  (format, variance) file pair for its single algorithm trial.
 """
 
 import json
@@ -56,12 +65,12 @@ import zstandard as zstd
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
-OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+OUTPUT_JSONL = Path(__file__).parent / "compression_results_zstd_finegrained.jsonl"
 
-CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB — always byte-aligned for every field
+CHUNK_BYTES = 128 * 1024 * 1024   # set larger than any file for one-shot reads
 ZSTD_LEVEL  = 1
-MAX_WORKERS = 42                   # 7 formats × 6 variances
+MAX_WORKERS = 42                   # safe for 69 GB node
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset structure
@@ -69,23 +78,20 @@ MAX_WORKERS = 42                   # 7 formats × 6 variances
 
 VARIANCES = ["Var0p01", "Var0p025", "Var0p05", "Var0p1", "Var0p25", "Var0p5"]
 
-# Non-delta algorithms: Base split only
-_SINGLE_ALGOS = ["raw_zstd", "byte_transpose", "semantic_sep", "bitplane", "gorilla_base"]
-# Delta algorithms: XOR_Delta split (reads Base + Redraw)
-_DELTA_ALGOS  = ["xor_delta", "gorilla_xor_delta"]
+_DELTA_ALGOS = {"xor_delta", "gorilla_xor_delta"}
 
-ALGORITHMS = _SINGLE_ALGOS + _DELTA_ALGOS
+ALGORITHMS = [
+    "raw_zstd",
+    "byte_transpose",
+    "semantic_sep",
+    "bitplane",
+    "gorilla_base",
+    "xor_delta",
+    "gorilla_xor_delta",
+]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Format registry
-#
-# uint_bits : logical bit-width of one element (4 for FP4, packed 2 per byte)
-# n_sign    : number of sign bits (1 for signed floats, 0 for E8M0)
-# n_exp     : exponent field width in bits
-# n_mant    : mantissa field width in bits
-# packed4   : True when two 4-bit elements share one byte
-# has_scales: whether a scales.bin companion file exists
-# scale_fmt : format descriptor dict for scales.bin (None if no scales)
 # ──────────────────────────────────────────────────────────────────────────────
 
 _SFMT_FP32    = dict(uint_bits=32, n_sign=1, n_exp=8,  n_mant=23, packed4=False)
@@ -116,7 +122,6 @@ _FMT_BY_NAME = {f["name"]: f for f in FORMATS}
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _read_chunks(path: Path):
-    """Yield successive CHUNK_BYTES raw-byte chunks from a file."""
     with open(path, "rb") as fh:
         while True:
             chunk = fh.read(CHUNK_BYTES)
@@ -126,7 +131,6 @@ def _read_chunks(path: Path):
 
 
 def _read_dual_chunks(path_a: Path, path_b: Path):
-    """Yield (chunk_a, chunk_b) pairs, stopping at the shorter file."""
     with open(path_a, "rb") as fa, open(path_b, "rb") as fb:
         while True:
             ca, cb = fa.read(CHUNK_BYTES), fb.read(CHUNK_BYTES)
@@ -141,65 +145,31 @@ def _read_dual_chunks(path_a: Path, path_b: Path):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _uint_dtype(fmt: dict) -> np.dtype:
-    """
-    Integer dtype for one logical element.
-    FP4 (uint_bits=4): no native numpy type; use uint8 (one packed byte = 2 elems).
-    """
     byte_width = max(1, fmt["uint_bits"] // 8)
     return np.dtype(f"<u{byte_width}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Field-extraction helpers
-#
-# Each returns a list of (field_name, packed_bytes) tuples — one entry per
-# independent Zstd stream.  Bit fields are packed with np.packbits with no
-# padding: chunk sizes guarantee every field's bit count is a multiple of 8.
+# Field-extraction generators — one plane at a time, O(1) peak RAM per plane
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _fields_byte_transpose(chunk: bytes, fmt: dict):
-    """
-    Yield one (name, bytes) stream per byte-plane within each element.
-    Yields one plane at a time so the caller can compress-and-discard
-    before the next plane is materialised.
-
-    FP32 → 4 streams (byte 0 … byte 3, little-endian)
-    FP16/BF16 → 2 streams
-    FP8 / packed FP4 → 1 stream (no-op: single-byte elements)
-    """
     elem_b = max(1, fmt["uint_bits"] // 8)
     if elem_b == 1:
         yield ("b0", chunk)
         return
     arr = np.frombuffer(chunk, dtype=np.uint8)
     n   = len(arr) // elem_b
-    mat = arr[: n * elem_b].reshape(n, elem_b)   # shape (N, elem_b)
+    mat = arr[: n * elem_b].reshape(n, elem_b)
     for i in range(elem_b):
         yield (f"b{i}", mat[:, i].tobytes())
-        # mat[:, i] is a view; tobytes() copies one plane — previous plane
-        # bytes object is released as soon as the caller discards it.
 
 
 def _fields_semantic_sep(chunk: bytes, fmt: dict):
-    """
-    Yield one (name, bytes) stream per semantic field: sign / exp / mantissa.
-    Yields one plane at a time so the caller can compress-and-discard before
-    the next plane is materialised — keeps peak RAM to one plane at a time.
-
-    Bit fields are packed raw (np.packbits) — no padding between elements.
-    Chunk byte-alignment guarantees each field's bit count % 8 == 0.
-
-    Yields:
-      FP4 packed  → ("sign", ...) then 3x ("mag_bitN", ...)
-      E8M0        → ("exp", ...)
-      Standard    → ("sign", ...) then n_exp x ("exp_bitN", ...)
-                    then n_mant x ("mant_bitN", ...)
-    """
     n_sign = fmt["n_sign"]
     n_exp  = fmt["n_exp"]
     n_mant = fmt["n_mant"]
 
-    # ── Packed-nibble FP4 ────────────────────────────────────────────────────
     if fmt["packed4"]:
         packed  = np.frombuffer(chunk, dtype=np.uint8)
         lo      = packed & 0x0F
@@ -208,79 +178,56 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict):
         nibbles[0::2], nibbles[1::2] = lo, hi
         sign_bits = ((nibbles >> 3) & 1).astype(np.uint8)
         mag_bits  = (nibbles & 0x7).astype(np.uint8)
-        yield ("sign", np.packbits(sign_bits).tobytes())
-        del sign_bits
+        yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
         for b in (2, 1, 0):
             plane = ((mag_bits >> b) & 1).astype(np.uint8)
-            yield (f"mag_bit{b}", np.packbits(plane).tobytes())
+            yield (f"mag_bit{b}", np.packbits(plane).tobytes());  del plane
         return
 
-    # ── Pure-exponent byte (E8M0) ────────────────────────────────────────────
     if n_sign == 0 and n_mant == 0:
         yield ("exp", chunk)
         return
 
-    # ── Standard float formats ───────────────────────────────────────────────
     dtype = _uint_dtype(fmt)
-    arr   = np.frombuffer(chunk, dtype=dtype)   # zero-copy view
+    arr   = np.frombuffer(chunk, dtype=dtype)
     bits  = fmt["uint_bits"]
 
-    # Sign: 1 bit/element
     if n_sign:
         sign_bits = ((arr >> (bits - 1)) & 1).astype(np.uint8)
-        yield ("sign", np.packbits(sign_bits).tobytes())
-        del sign_bits
+        yield ("sign", np.packbits(sign_bits).tobytes());  del sign_bits
 
-    # Exponent: one plane per bit, MSB first
     exp_mask = (1 << n_exp) - 1
-    exp_vals = (arr >> n_mant) & exp_mask   # native dtype — no cast needed
+    exp_vals = (arr >> n_mant) & exp_mask
     for b in range(n_exp - 1, -1, -1):
         plane = ((exp_vals >> b) & 1).astype(np.uint8)
-        yield (f"exp_bit{b}", np.packbits(plane).tobytes())
-        del plane
+        yield (f"exp_bit{b}", np.packbits(plane).tobytes());  del plane
     del exp_vals
 
-    # Mantissa: one plane per bit, MSB first
     if n_mant:
         mant_mask = (1 << n_mant) - 1
-        mant_vals = arr & mant_mask          # native dtype — no cast needed
+        mant_vals = arr & mant_mask
         for b in range(n_mant - 1, -1, -1):
             plane = ((mant_vals >> b) & 1).astype(np.uint8)
-            yield (f"mant_bit{b}", np.packbits(plane).tobytes())
-            del plane
+            yield (f"mant_bit{b}", np.packbits(plane).tobytes());  del plane
 
 
 def _fields_bitplane(chunk: bytes, fmt: dict):
-    """
-    Yield one (name, bytes) stream per bit-plane of the element integer, MSB→LSB.
-    Yields one plane at a time so the caller can compress-and-discard before
-    the next plane is materialised.
-
-    For packed FP4: operate on the packed byte (8 planes of the byte word),
-    keeping the implementation uniform without nibble unpacking.
-
-    Each plane is np.packbits'd — byte-aligned by the chunk guarantee.
-    """
     if fmt["packed4"]:
         arr    = np.frombuffer(chunk, dtype=np.uint8)
         n_bits = 8
     else:
         arr    = np.frombuffer(chunk, dtype=_uint_dtype(fmt))
         n_bits = fmt["uint_bits"]
-
-    for bit_i in range(n_bits - 1, -1, -1):   # MSB first
+    for bit_i in range(n_bits - 1, -1, -1):
         plane = ((arr >> bit_i) & 1).astype(np.uint8)
-        yield (f"bit{bit_i}", np.packbits(plane).tobytes())
-        del plane
+        yield (f"bit{bit_i}", np.packbits(plane).tobytes());  del plane
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Gorilla stateful coder
+# Gorilla
 # ──────────────────────────────────────────────────────────────────────────────
 
 class _Gorilla:
-    """Consecutive-element XOR encoder, stateful across chunk boundaries."""
-
     def __init__(self, fmt: dict):
         self._dt   = _uint_dtype(fmt)
         self._prev = self._dt.type(0)
@@ -288,9 +235,9 @@ class _Gorilla:
     def feed(self, data: bytes) -> bytes:
         if not data:
             return b""
-        arr = np.frombuffer(data, dtype=self._dt)
-        out    = arr.copy()
-        out[0] ^= self._prev
+        arr        = np.frombuffer(data, dtype=self._dt)
+        out        = arr.copy()
+        out[0]    ^= self._prev
         if len(arr) > 1:
             out[1:] ^= arr[:-1]
         self._prev = arr[-1]
@@ -298,237 +245,263 @@ class _Gorilla:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Multi-stream compress / decompress
+# Core compression helpers
+#
+# StreamResult = {
+#   "original_bytes", "compressed_bytes", "ratio",
+#   "compress_time_s", "decompress_time_s"
+# }
+#
+# FileResult = {
+#   "original_bytes", "compressed_bytes", "ratio",
+#   "compress_time_s", "decompress_time_s",
+#   "streams": { name: StreamResult }
+# }
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _compress_multistream(field_chunks_iter_factory, level: int):
+def _zstd_one_stream(chunk_iter_factory) -> dict:
     """
-    Compress a multi-stream algorithm over a file.
+    Compress a single byte stream with Zstd.
 
-    field_chunks_iter_factory: a zero-argument callable that returns a fresh
-      iterable each time it is called.  Each element yielded is itself a
-      generator of (name, bytes) tuples — one per stream for that chunk.
-      Using a generator (not a list) means only one stream's data is live
-      at a time, keeping peak RAM to O(one_plane).
+    Two passes:
+      Pass 1 (compress): stream through file, compress each chunk, count bytes,
+                         discard blob immediately — O(1) peak RAM.
+      Pass 2 (decompress): re-stream file, re-compress each chunk to recover
+                           the blob, decompress and discard — O(one blob) RAM.
 
-    Returns:
-      total_compressed  — sum of compressed sizes across all streams/chunks
-      compress_time_s   — field extraction + Zstd compress, full file pass
-      decompress_time_s — field extraction + Zstd decompress, full file pass
-
-    Memory contract: at most two objects are live simultaneously:
-      • the raw chunk (held by the file reader, released each iteration)
-      • one (field_name, field_bytes) tuple from the generator
-      • the corresponding compressed blob (created, counted, then del'd)
-    No compressed blobs are accumulated across chunks or streams.
-    The decompress pass re-reads the file, re-extracts each field, re-compresses
-    it (to get the blob to decompress), then immediately decompresses and discards.
+    Returns a StreamResult dict.
     """
-    cctx = zstd.ZstdCompressor(level=level)
+    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL)
     dctx = zstd.ZstdDecompressor()
 
-    # ── Compression pass ──────────────────────────────────────────────────────
-    total_compressed = 0
-    t_compress       = 0.0
+    # ── Compress pass ─────────────────────────────────────────────────────────
+    n_orig     = 0
+    n_comp     = 0
+    t_compress = 0.0
 
-    for field_gen in field_chunks_iter_factory():
+    for chunk in chunk_iter_factory():
         t0 = time.perf_counter()
-        for _, data in field_gen:           # generator: one plane at a time
-            blob = cctx.compress(data)
-            total_compressed += len(blob)
-            del blob                        # discard immediately
+        blob = cctx.compress(chunk)
         t_compress += time.perf_counter() - t0
+        n_orig += len(chunk)
+        n_comp += len(blob)
+        del blob
 
-    if total_compressed == 0:
-        return 0, 0.0, 0.0
-
-    # ── Decompression pass ────────────────────────────────────────────────────
-    # Re-extract each field, re-compress (to get the blob), decompress, discard.
-    # Peak memory per iteration: one raw plane + one compressed blob.
+    # ── Decompress pass ───────────────────────────────────────────────────────
     t_decompress = 0.0
 
-    for field_gen in field_chunks_iter_factory():
-        t0 = time.perf_counter()
-        for _, data in field_gen:
-            blob = cctx.compress(data)
-            dctx.decompress(blob)
-            del blob
+    for chunk in chunk_iter_factory():
+        blob = cctx.compress(chunk)          # re-compress to recover blob
+        t0   = time.perf_counter()
+        dctx.decompress(blob)
         t_decompress += time.perf_counter() - t0
+        del blob
 
-    return total_compressed, t_compress, t_decompress
+    ratio = round(n_comp / n_orig, 6) if n_orig else None
+    return {
+        "original_bytes":    n_orig,
+        "compressed_bytes":  n_comp,
+        "ratio":             ratio,
+        "compress_time_s":   t_compress,
+        "decompress_time_s": t_decompress,
+    }
 
 
-def _compress_singlestream(chunk_iter, level: int):
+def _zstd_multi_stream(field_chunks_iter_factory) -> dict:
     """
-    Compress a single-stream algorithm over a file.
+    Per-stream Zstd compression for multi-stream algorithms.
 
-    chunk_iter: iterable of preprocessed bytes chunks.
+    field_chunks_iter_factory: zero-arg callable → iterable of generators,
+      each generator yielding (name, bytes) for one chunk's streams.
 
-    Returns (compressed_bytes_total, compress_time_s, decompress_time_s).
+    For each stream s_idx:
+      Pass 1 (compress): advance to stream s_idx in each chunk's generator,
+                         compress, count bytes, discard blob.
+      Pass 2 (decompress): same advance, re-compress, decompress, discard.
+
+    This costs 2 × n_streams full file reads.
+    Peak RAM: one stream's data + one blob at a time.
+
+    Returns a FileResult dict with per-stream StreamResults.
     """
-    cctx = zstd.ZstdCompressor(level=level)
+    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL)
     dctx = zstd.ZstdDecompressor()
 
-    tot_comp = 0
-    t_comp   = 0.0
-    t_decomp = 0.0
+    # ── Discover stream names from first chunk ────────────────────────────────
+    stream_names = []
+    for field_gen in field_chunks_iter_factory():
+        for name, _ in field_gen:
+            stream_names.append(name)
+        break
+    if not stream_names:
+        return {"original_bytes": 0, "compressed_bytes": 0, "ratio": None,
+                "compress_time_s": 0.0, "decompress_time_s": 0.0, "streams": {}}
 
-    for chunk in chunk_iter:
-        t0 = time.perf_counter()
-        compressed = cctx.compress(chunk)
-        t_comp += time.perf_counter() - t0
+    stream_results = {}
 
-        tot_comp += len(compressed)
+    for s_idx, s_name in enumerate(stream_names):
 
-        t0 = time.perf_counter()
-        dctx.decompress(compressed)
-        t_decomp += time.perf_counter() - t0
+        # Pass 1: compress
+        n_orig     = 0
+        n_comp     = 0
+        t_compress = 0.0
+        for field_gen in field_chunks_iter_factory():
+            for i, (_, data) in enumerate(field_gen):
+                if i == s_idx:
+                    t0   = time.perf_counter()
+                    blob = cctx.compress(data)
+                    t_compress += time.perf_counter() - t0
+                    n_orig += len(data)
+                    n_comp += len(blob)
+                    del blob
+                    break
 
-    return tot_comp, t_comp, t_decomp
+        # Pass 2: decompress
+        t_decompress = 0.0
+        for field_gen in field_chunks_iter_factory():
+            for i, (_, data) in enumerate(field_gen):
+                if i == s_idx:
+                    blob = cctx.compress(data)   # re-compress to get blob
+                    t0   = time.perf_counter()
+                    dctx.decompress(blob)
+                    t_decompress += time.perf_counter() - t0
+                    del blob
+                    break
+
+        stream_results[s_name] = {
+            "original_bytes":    n_orig,
+            "compressed_bytes":  n_comp,
+            "ratio":             round(n_comp / n_orig, 6) if n_orig else None,
+            "compress_time_s":   t_compress,
+            "decompress_time_s": t_decompress,
+        }
+
+    total_orig = sum(v["original_bytes"]   for v in stream_results.values())
+    total_comp = sum(v["compressed_bytes"] for v in stream_results.values())
+    total_tc   = sum(v["compress_time_s"]  for v in stream_results.values())
+    total_td   = sum(v["decompress_time_s"] for v in stream_results.values())
+
+    return {
+        "original_bytes":    total_orig,
+        "compressed_bytes":  total_comp,
+        "ratio":             round(total_comp / total_orig, 6) if total_orig else None,
+        "compress_time_s":   total_tc,
+        "decompress_time_s": total_td,
+        "streams":           stream_results,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Per-algorithm dispatch
+# Per-file compression dispatcher
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _run_algo(algo: str, path: Path, redraw: Path, fmt: dict):
+def _compress_file(algo: str, path: Path, redraw: Path, fmt: dict) -> dict:
     """
-    Run one algorithm on one file.  Returns (comp_bytes, t_comp, t_decomp).
+    Run one algorithm on one file.  Returns a FileResult dict.
 
-    path   : primary file (Base weights/scales, or Base for delta algos)
-    redraw : Redraw file (only used by delta algos)
-    fmt    : format descriptor for this data stream
+    Single-stream algorithms return streams = {"data": StreamResult}.
+    Multi-stream algorithms return streams keyed by plane/field name.
     """
-    level = ZSTD_LEVEL
 
-    # ── Multi-stream algorithms ───────────────────────────────────────────────
+    # ── Multi-stream ──────────────────────────────────────────────────────────
     if algo == "byte_transpose":
-        return _compress_multistream(
-            lambda: (_fields_byte_transpose(c, fmt) for c in _read_chunks(path)), level)
+        return _zstd_multi_stream(
+            lambda: (_fields_byte_transpose(c, fmt) for c in _read_chunks(path)))
 
     if algo == "semantic_sep":
-        return _compress_multistream(
-            lambda: (_fields_semantic_sep(c, fmt)   for c in _read_chunks(path)), level)
+        return _zstd_multi_stream(
+            lambda: (_fields_semantic_sep(c, fmt) for c in _read_chunks(path)))
 
     if algo == "bitplane":
-        return _compress_multistream(
-            lambda: (_fields_bitplane(c, fmt)        for c in _read_chunks(path)), level)
+        return _zstd_multi_stream(
+            lambda: (_fields_bitplane(c, fmt) for c in _read_chunks(path)))
 
-    # ── Single-stream algorithms ──────────────────────────────────────────────
+    # ── Single-stream ─────────────────────────────────────────────────────────
     if algo == "raw_zstd":
-        return _compress_singlestream(_read_chunks(path), level)
+        sr = _zstd_one_stream(lambda: _read_chunks(path))
 
-    if algo == "gorilla_base":
-        g = _Gorilla(fmt)
-        return _compress_singlestream((g.feed(c) for c in _read_chunks(path)), level)
+    elif algo == "gorilla_base":
+        g  = _Gorilla(fmt)
+        sr = _zstd_one_stream(lambda: (g.feed(c) for c in _read_chunks(path)))
 
-    if algo == "xor_delta":
-        xor_iter = (
+    elif algo == "xor_delta":
+        sr = _zstd_one_stream(lambda: (
             (np.frombuffer(a, np.uint8) ^ np.frombuffer(b, np.uint8)).tobytes()
             for a, b in _read_dual_chunks(path, redraw)
-        )
-        return _compress_singlestream(xor_iter, level)
+        ))
 
-    if algo == "gorilla_xor_delta":
+    elif algo == "gorilla_xor_delta":
         g = _Gorilla(fmt)
-        def _gen():
+        def _gxd():
             for a, b in _read_dual_chunks(path, redraw):
                 xb = (np.frombuffer(a, np.uint8) ^ np.frombuffer(b, np.uint8)).tobytes()
                 yield g.feed(xb)
-        return _compress_singlestream(_gen(), level)
+        sr = _zstd_one_stream(lambda: _gxd())
 
-    raise ValueError(f"Unknown algorithm: {algo!r}")
+    else:
+        raise ValueError(f"Unknown algorithm: {algo!r}")
+
+    return {**sr, "streams": {"data": sr}}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Single trial
+# Single trial — one (format_name, variance, algorithm)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _run_trial(fmt: dict, var: str, algo: str) -> dict:
-    """
-    Run one (format, variance, algorithm) trial.
-    split is always "Base" for non-delta algos, "XOR_Delta" for delta algos.
-    Returns a dict ready for JSON serialisation.
-    """
-    base_dir   = RESULTS_DIR / fmt["name"] / var / "Base"
-    redraw_dir = RESULTS_DIR / fmt["name"] / var / "Redraw0p01"
-
-    base_wp   = base_dir   / "weights.bin"
-    redraw_wp = redraw_dir / "weights.bin"
+def _run_trial(fmt_name: str, var: str, algo: str) -> dict:
+    fmt        = _FMT_BY_NAME[fmt_name]
+    base_dir   = RESULTS_DIR / fmt_name / var / "Base"
+    redraw_dir = RESULTS_DIR / fmt_name / var / "Redraw0p01"
+    base_wp    = base_dir   / "weights.bin"
+    redraw_wp  = redraw_dir / "weights.bin"
 
     split = "XOR_Delta" if algo in _DELTA_ALGOS else "Base"
 
-    w_orig              = base_wp.stat().st_size
-    w_comp, w_tc, w_td  = _run_algo(algo, base_wp, redraw_wp, fmt)
-
-    # ── Scales ────────────────────────────────────────────────────────────────
-    s_orig = s_comp = 0
-    s_tc   = s_td   = None
+    w_res = _compress_file(algo, base_wp, redraw_wp, fmt)
 
     if fmt["has_scales"]:
         base_sp   = base_dir   / "scales.bin"
         redraw_sp = redraw_dir / "scales.bin"
-        s_orig             = base_sp.stat().st_size
-        s_comp, s_tc, s_td = _run_algo(algo, base_sp, redraw_sp, fmt["scale_fmt"])
+        s_res = _compress_file(algo, base_sp, redraw_sp, fmt["scale_fmt"])
+    else:
+        s_res = {
+            "original_bytes": 0, "compressed_bytes": 0, "ratio": None,
+            "compress_time_s": None, "decompress_time_s": None,
+            "streams": {},
+        }
 
-    def _ratio(comp, orig):
-        return round(comp / orig, 6) if orig > 0 else None
+    s_tc = s_res["compress_time_s"]
+    s_td = s_res["decompress_time_s"]
+    total_compress   = w_res["compress_time_s"]   + (s_tc or 0.0)
+    total_decompress = w_res["decompress_time_s"] + (s_td or 0.0)
 
     return dict(
-        format     = fmt["name"],
+        format     = fmt_name,
         variance   = var,
         split      = split,
         algorithm  = algo,
         zstd_level = ZSTD_LEVEL,
+        timing     = dict(
+            compress_time_s   = total_compress,
+            decompress_time_s = total_decompress,
+        ),
         weights    = dict(
-            original_bytes    = w_orig,
-            compressed_bytes  = w_comp,
-            ratio             = _ratio(w_comp, w_orig),
-            compress_time_s   = w_tc,
-            decompress_time_s = w_td,
+            original_bytes    = w_res["original_bytes"],
+            compressed_bytes  = w_res["compressed_bytes"],
+            ratio             = w_res["ratio"],
+            compress_time_s   = w_res["compress_time_s"],
+            decompress_time_s = w_res["decompress_time_s"],
+            streams           = w_res["streams"],
         ),
         scales     = dict(
-            original_bytes    = s_orig,
-            compressed_bytes  = s_comp,
-            ratio             = _ratio(s_comp, s_orig),
+            original_bytes    = s_res["original_bytes"],
+            compressed_bytes  = s_res["compressed_bytes"],
+            ratio             = s_res["ratio"],
             compress_time_s   = s_tc,
             decompress_time_s = s_td,
+            streams           = s_res["streams"],
         ),
     )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# (format × variance) worker — runs in its own subprocess
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _run_fmt_var(fmt_name: str, var: str) -> list:
-    """
-    Run all algorithm trials for one (format, variance) pair sequentially.
-    File access is confined to RESULTS/<fmt_name>/<var>/ — unique per worker.
-    """
-    fmt     = _FMT_BY_NAME[fmt_name]
-    records = []
-
-    for algo in ALGORITHMS:
-        label = f"{fmt_name}/{var}/{algo}"
-        try:
-            rec = _run_trial(fmt, var, algo)
-            records.append(rec)
-            w = rec["weights"]
-            print(
-                f"  OK   {label:<55s}  "
-                f"ratio={w['ratio']:.4f}  "
-                f"c={w['compress_time_s']:7.1f}s  "
-                f"d={w['decompress_time_s']:6.1f}s",
-                flush=True,
-            )
-        except FileNotFoundError as exc:
-            print(f"  SKIP {label}  [{exc}]", flush=True)
-        except Exception as exc:
-            print(f"  ERR  {label}  [{exc}]", flush=True)
-            traceback.print_exc()
-
-    return records
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -537,19 +510,18 @@ def _run_fmt_var(fmt_name: str, var: str) -> list:
 
 def main():
     work_items = [
-        (fmt["name"], var)
-        for fmt in FORMATS
-        for var in VARIANCES
+        (fmt["name"], var, algo)
+        for algo in ALGORITHMS          # algorithm-first for scheduling fairness
+        for fmt  in FORMATS
+        for var  in VARIANCES
     ]
-    assert len(work_items) == 42
-
-    n_total = len(ALGORITHMS) * len(work_items)
+    n_total = len(work_items)           # 7 × 7 × 6 = 294
 
     print(
         f"Output       : {OUTPUT_JSONL}\n"
         f"RESULTS dir  : {RESULTS_DIR}\n"
         f"Chunk size   : {CHUNK_BYTES // 1024 // 1024} MB\n"
-        f"Workers      : {MAX_WORKERS}  (7 formats × 6 variances)\n"
+        f"Workers      : {MAX_WORKERS}\n"
         f"Algorithms   : {ALGORITHMS}\n"
         f"Zstd level   : {ZSTD_LEVEL}\n"
         f"Total trials : {n_total}\n",
@@ -558,37 +530,34 @@ def main():
 
     wall_start    = time.perf_counter()
     n_records_out = 0
-    n_pairs_done  = 0
 
     with open(OUTPUT_JSONL, "w") as out_fh:
         with ProcessPoolExecutor(max_workers=MAX_WORKERS) as pool:
             future_to_key = {
-                pool.submit(_run_fmt_var, fmt_name, var): (fmt_name, var)
-                for fmt_name, var in work_items
+                pool.submit(_run_trial, fmt_name, var, algo): (fmt_name, var, algo)
+                for fmt_name, var, algo in work_items
             }
             for fut in as_completed(future_to_key):
-                fmt_name, var = future_to_key[fut]
-                n_pairs_done += 1
+                fmt_name, var, algo = future_to_key[fut]
                 elapsed = time.perf_counter() - wall_start
                 try:
-                    records = fut.result()
-                    for rec in records:
-                        out_fh.write(json.dumps(rec) + "\n")
+                    rec = fut.result()
+                    out_fh.write(json.dumps(rec) + "\n")
                     out_fh.flush()
-                    n_records_out += len(records)
+                    n_records_out += 1
+                    w = rec["weights"]
                     print(
-                        f"[{n_pairs_done:2d}/42]  {fmt_name}/{var}  "
-                        f"→ {len(records)} records written  "
-                        f"(cumulative {n_records_out}/{n_total}, "
-                        f"elapsed {elapsed:.0f}s)",
+                        f"[{n_records_out:3d}/{n_total}]  "
+                        f"{fmt_name}/{var}/{algo:<22s}  "
+                        f"ratio={w['ratio']:.4f}  "
+                        f"c={rec['timing']['compress_time_s']:7.2f}s  "
+                        f"elapsed={elapsed:.0f}s",
                         flush=True,
                     )
+                except FileNotFoundError as exc:
+                    print(f"  SKIP {fmt_name}/{var}/{algo}  [{exc}]", flush=True)
                 except Exception as exc:
-                    print(
-                        f"[{n_pairs_done:2d}/42]  {fmt_name}/{var}  "
-                        f"WORKER FAILED — {exc}",
-                        flush=True,
-                    )
+                    print(f"  ERR  {fmt_name}/{var}/{algo}  [{exc}]", flush=True)
                     traceback.print_exc()
 
     total_elapsed = time.perf_counter() - wall_start
