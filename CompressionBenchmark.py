@@ -56,7 +56,7 @@ import zstandard as zstd
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
 
 CHUNK_BYTES = 8 * 1024 * 1024 * 1024   # 8 GB — always byte-aligned for every field
