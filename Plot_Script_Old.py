@@ -8,13 +8,13 @@ import numpy as np
 import pandas as pd
 
 
-INPUT_JSONL = "compression_results_2_10_V2.jsonl"
+INPUT_JSONL = "compression_results_2_30_V1.jsonl"
 OUTPUT_DIR = Path("PLOTS")
 
-# Only splits and levels that the current benchmark actually produces
-SPLITS_TO_PLOT    = ["Base", "XOR_Delta"]
-ZSTD_LEVELS_TO_PLOT = [1]
+SPLITS_TO_PLOT = ["Base", "Redraw0p01", "XOR_Delta"]
+ZSTD_LEVELS_TO_PLOT = [1, 19]
 
+# Exact format names from the data
 FORMAT_ORDER = [
     "FP32E8M23",
     "BF16E8M7",
@@ -25,9 +25,10 @@ FORMAT_ORDER = [
     "NVFP4E2M1",
 ]
 
+# Metrics from the nested "weights" object
 METRICS = {
-    "weights_ratio":             "Compression Ratio",
-    "weights_compress_time_s":   "Compression Time (s)",
+    "weights_ratio": "Compression Ratio",
+    "weights_compress_time_s": "Compression Time (s)",
     "weights_decompress_time_s": "Decompression Time (s)",
 }
 
@@ -39,27 +40,30 @@ def load_jsonl(path: str) -> pd.DataFrame:
             line = line.strip()
             if not line:
                 continue
+
             try:
                 obj = json.loads(line)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON on line {line_num}: {e}") from e
 
             weights = obj.get("weights", {}) or {}
-            scales  = obj.get("scales",  {}) or {}
+            scales = obj.get("scales", {}) or {}
 
-            rows.append({
-                "format":                    obj.get("format"),
-                "variance":                  obj.get("variance"),
-                "split":                     obj.get("split"),
-                "algorithm":                 obj.get("algorithm"),
-                "zstd_level":                obj.get("zstd_level"),
-                "weights_ratio":             weights.get("ratio"),
-                "weights_compress_time_s":   weights.get("compress_time_s"),
-                "weights_decompress_time_s": weights.get("decompress_time_s"),
-                "scales_ratio":              scales.get("ratio"),
-                "scales_compress_time_s":    scales.get("compress_time_s"),
-                "scales_decompress_time_s":  scales.get("decompress_time_s"),
-            })
+            rows.append(
+                {
+                    "format": obj.get("format"),
+                    "variance": obj.get("variance"),
+                    "split": obj.get("split"),
+                    "algorithm": obj.get("algorithm"),
+                    "zstd_level": obj.get("zstd_level"),
+                    "weights_ratio": weights.get("ratio"),
+                    "weights_compress_time_s": weights.get("compress_time_s"),
+                    "weights_decompress_time_s": weights.get("decompress_time_s"),
+                    "scales_ratio": scales.get("ratio"),
+                    "scales_compress_time_s": scales.get("compress_time_s"),
+                    "scales_decompress_time_s": scales.get("decompress_time_s"),
+                }
+            )
 
     if not rows:
         raise ValueError(f"No rows found in {path}")
@@ -75,6 +79,18 @@ def coerce_numeric(df: pd.DataFrame, cols):
     return df
 
 
+def normalize_split_name(value):
+    s = str(value).strip()
+    lookup = {
+        "base": "Base",
+        "redraw0p01": "Redraw0p01",
+        "xor_delta": "XOR_Delta",
+        "xordelta": "XOR_Delta",
+    }
+    key = s.lower().replace("-", "_").replace(" ", "_")
+    return lookup.get(key, s)
+
+
 def sort_variance_values(series: pd.Series):
     raw_values = [v for v in pd.unique(series) if pd.notna(v)]
     temp = pd.DataFrame({"variance": raw_values})
@@ -83,12 +99,14 @@ def sort_variance_values(series: pd.Series):
         .astype(str)
         .str.replace("Var", "", regex=False)
         .str.replace("var", "", regex=False)
-        .str.replace("p",   ".", regex=False)
+        .str.replace("p", ".", regex=False)
     )
     temp["variance_num"] = pd.to_numeric(temp["variance_num"], errors="coerce")
+
     if temp["variance_num"].notna().all():
         temp = temp.sort_values("variance_num")
         return temp["variance"].tolist()
+
     return raw_values
 
 
@@ -108,7 +126,7 @@ def plot_grouped_bars(
     output_path: Path,
 ):
     sub = df[
-        (df["split"]      == split_name)
+        (df["split"] == split_name)
         & (df["zstd_level"] == zstd_level)
         & df[metric_col].notna()
         & df[group_col].notna()
@@ -125,10 +143,7 @@ def plot_grouped_bars(
     if group_col == "format":
         group_values = [g for g in FORMAT_ORDER if g in set(sub["format"].astype(str))]
     else:
-        group_values = [
-            g for g in sub[group_col].cat.categories
-            if g in set(sub[group_col].astype(str))
-        ]
+        group_values = [g for g in sub[group_col].cat.categories if g in set(sub[group_col].astype(str))]
 
     algo_values = sorted(pd.unique(sub[algo_col].astype(str)).tolist())
 
@@ -140,6 +155,8 @@ def plot_grouped_bars(
 
     pivot = grouped.pivot(index=group_col, columns=algo_col, values=metric_col)
     pivot = pivot.reindex(index=group_values, columns=algo_values)
+
+    # Drop groups that are entirely NaN, which avoids blank / non-rendering plots
     pivot = pivot.dropna(axis=0, how="all")
     pivot = pivot.dropna(axis=1, how="all")
 
@@ -150,18 +167,20 @@ def plot_grouped_bars(
         )
         return
 
-    n_groups  = len(pivot.index)
-    n_algos   = len(pivot.columns)
-    x         = np.arange(n_groups)
+    n_groups = len(pivot.index)
+    n_algos = len(pivot.columns)
+
+    x = np.arange(n_groups)
     total_width = 0.84
-    bar_width   = total_width / max(n_algos, 1)
+    bar_width = total_width / max(n_algos, 1)
 
     fig_width = max(12, 1.6 * n_groups + 4)
-    fig, ax   = plt.subplots(figsize=(fig_width, 7))
+    fig, ax = plt.subplots(figsize=(fig_width, 7))
 
     for i, algo in enumerate(pivot.columns):
         offsets = x - (total_width / 2) + (i + 0.5) * bar_width
-        ax.bar(offsets, pivot[algo].values, width=bar_width, label=str(algo))
+        values = pivot[algo].values
+        ax.bar(offsets, values, width=bar_width, label=str(algo))
 
     ax.set_title(
         f"{metric_label} by {group_label} | Split={split_name} | zstd_level={zstd_level}"
@@ -173,6 +192,7 @@ def plot_grouped_bars(
     ax.legend(title="Algorithm", bbox_to_anchor=(1.02, 1), loc="upper left")
     ax.grid(axis="y", linestyle="--", alpha=0.35)
     fig.tight_layout()
+
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {output_path}")
@@ -195,8 +215,10 @@ def main():
             f"Available columns: {list(df.columns)}"
         )
 
+    df["split"] = df["split"].map(normalize_split_name)
     df = coerce_numeric(df, ["zstd_level"] + list(METRICS.keys()))
 
+    # Exact format ordering, but only keep formats present in the file
     present_formats = [f for f in FORMAT_ORDER if f in set(df["format"].astype(str))]
     df["format"] = pd.Categorical(df["format"], categories=present_formats, ordered=True)
 
@@ -206,7 +228,10 @@ def main():
     for split_name in SPLITS_TO_PLOT:
         for zstd_level in ZSTD_LEVELS_TO_PLOT:
             for metric_col, metric_label in METRICS.items():
-
+                out_format = (
+                    OUTPUT_DIR
+                    / f"{metric_col}_by_format_split_{split_name}_zstd{zstd_level}.png"
+                )
                 plot_grouped_bars(
                     df=df,
                     split_name=split_name,
@@ -216,9 +241,13 @@ def main():
                     group_col="format",
                     group_label="Quantization Type / Format",
                     algo_col="algorithm",
-                    output_path=OUTPUT_DIR / f"{metric_col}_by_format_split_{split_name}_zstd{zstd_level}.png",
+                    output_path=out_format,
                 )
 
+                out_variance = (
+                    OUTPUT_DIR
+                    / f"{metric_col}_by_variance_split_{split_name}_zstd{zstd_level}.png"
+                )
                 plot_grouped_bars(
                     df=df,
                     split_name=split_name,
@@ -228,7 +257,7 @@ def main():
                     group_col="variance",
                     group_label="Variance",
                     algo_col="algorithm",
-                    output_path=OUTPUT_DIR / f"{metric_col}_by_variance_split_{split_name}_zstd{zstd_level}.png",
+                    output_path=out_variance,
                 )
 
     print("\nDone.")

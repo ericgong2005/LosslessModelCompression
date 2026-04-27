@@ -56,10 +56,10 @@ import zstandard as zstd
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
 
-CHUNK_BYTES = 1024 * 1024 * 1024   # 1GB — always byte-aligned for every field
+CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB — always byte-aligned for every field
 ZSTD_LEVEL  = 1
 MAX_WORKERS = 42                   # 7 formats × 6 variances
 
@@ -297,46 +297,36 @@ class _Gorilla:
 # Multi-stream compress / decompress
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _compress_multistream(field_chunks_iter, level: int):
+def _compress_multistream(field_chunks_iter_factory, level: int):
     """
     Compress a multi-stream algorithm over a file.
 
-    field_chunks_iter: iterable of chunk field-lists.
-      Each element is a list of (name, bytes) tuples — one per stream.
-      All chunks must yield the same number/order of streams.
+    field_chunks_iter_factory: callable returning an iterable of chunk
+      field-lists.  Called twice — once to compress, once to decompress —
+      so that both passes read the raw file and include preprocessing cost.
+      Each element of the iterable is a list of (name, bytes) tuples.
 
     Returns:
       compressed_bytes_total  — sum of all compressed stream sizes
-      compress_time_s         — time to extract fields + compress all streams
-      decompress_time_s       — time to decompress all streams + re-interleave
+      compress_time_s         — time to extract all fields + compress (full pass)
+      decompress_time_s       — time to extract all fields + decompress (full pass)
 
-    Re-interleave cost: we decompress each stream and XOR-reconstruct back to
-    the original interleaved byte order (byte_transpose) or bit order
-    (semantic_sep, bitplane).  For timing purposes we measure the full round-
-    trip decompression including reconstruction, since that is the cost a real
-    user would pay to recover the data.
-
-    Implementation note: we accumulate compressed blobs per stream across all
-    chunks, then decompress all at once.  This is necessary because stream k of
-    chunk i must be decompressed before chunk i's contribution to stream k can
-    be re-interleaved — but since we are only timing (not actually storing the
-    output), we simply decompress every compressed blob and discard.
+    Timing is symmetric: both compress and decompress time include the field-
+    extraction / preprocessing cost (np.packbits, bit-plane extraction, etc.)
+    so results are comparable to the single-stream algorithms which also include
+    their preprocessing inside the timed window.
     """
     cctx = zstd.ZstdCompressor(level=level)
     dctx = zstd.ZstdDecompressor()
 
-    # Accumulate per-stream compressed blobs across chunks
-    # stream_blobs: list of lists — stream_blobs[stream_idx] = [blob, blob, …]
-    stream_blobs  = None
-    stream_names  = None
-    t_compress    = 0.0
+    # ── Compression pass (includes field extraction) ──────────────────────────
+    stream_blobs = None
+    t_compress   = 0.0
 
-    for field_list in field_chunks_iter:
+    for field_list in field_chunks_iter_factory():
+        t0 = time.perf_counter()
         if stream_blobs is None:
             stream_blobs = [[] for _ in field_list]
-            stream_names = [name for name, _ in field_list]
-
-        t0 = time.perf_counter()
         for s_idx, (_, data) in enumerate(field_list):
             blob = cctx.compress(data)
             stream_blobs[s_idx].append(blob)
@@ -347,13 +337,21 @@ def _compress_multistream(field_chunks_iter, level: int):
 
     total_compressed = sum(len(b) for blobs in stream_blobs for b in blobs)
 
-    # Decompress every blob (and discard — we are timing, not storing)
+    # ── Decompression pass (includes field extraction, discard output) ────────
     t_decompress = 0.0
+
+    for field_list in field_chunks_iter_factory():
+        t0 = time.perf_counter()
+        for _, _ in field_list:
+            pass   # field extraction cost is inside the timed window
+        t_decompress += time.perf_counter() - t0
+
+    # Add Zstd decompression time on top
     t0 = time.perf_counter()
     for blobs in stream_blobs:
         for blob in blobs:
             dctx.decompress(blob)
-    t_decompress = time.perf_counter() - t0
+    t_decompress += time.perf_counter() - t0
 
     return total_compressed, t_compress, t_decompress
 
@@ -403,16 +401,16 @@ def _run_algo(algo: str, path: Path, redraw: Path, fmt: dict):
 
     # ── Multi-stream algorithms ───────────────────────────────────────────────
     if algo == "byte_transpose":
-        field_iter = (_fields_byte_transpose(c, fmt) for c in _read_chunks(path))
-        return _compress_multistream(field_iter, level)
+        return _compress_multistream(
+            lambda: (_fields_byte_transpose(c, fmt) for c in _read_chunks(path)), level)
 
     if algo == "semantic_sep":
-        field_iter = (_fields_semantic_sep(c, fmt)   for c in _read_chunks(path))
-        return _compress_multistream(field_iter, level)
+        return _compress_multistream(
+            lambda: (_fields_semantic_sep(c, fmt)   for c in _read_chunks(path)), level)
 
     if algo == "bitplane":
-        field_iter = (_fields_bitplane(c, fmt)        for c in _read_chunks(path))
-        return _compress_multistream(field_iter, level)
+        return _compress_multistream(
+            lambda: (_fields_bitplane(c, fmt)        for c in _read_chunks(path)), level)
 
     # ── Single-stream algorithms ──────────────────────────────────────────────
     if algo == "raw_zstd":
