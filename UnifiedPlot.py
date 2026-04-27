@@ -12,7 +12,7 @@ import pandas as pd
 # Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 
-INPUT_JSONL = "compression_results_huffman_finegrained_2_10.jsonl"   # change to zstd file as needed
+INPUT_JSONL = "compression_results_zstd.jsonl"   # change to zstd file as needed
 
 # Output dir is derived automatically from the filename
 _stem = Path(INPUT_JSONL).stem   # e.g. "compression_results_huffman"
