@@ -13,7 +13,7 @@
  * DESIGN OVERVIEW
  * =============================================================================
  *
- *  Process/Thread layout (36 virtual cores total):
+ *  Process/Thread layout (48 virtual cores total):
  *    main()
  *    ├── create all output directories
  *    └── for each variance in VARIANCES[6]:
@@ -26,7 +26,7 @@
  *                after join: concatenate per-thread temp files -> final files
  *                            delete temp files
  *
- *  6 processes x 6 threads = 36 total workers, matching the 36 virtual cores.
+ *  6 processes x 8 threads = 48 total workers, matching the 48 virtual cores.
  *
  * =============================================================================
  * PER-ELEMENT LOGIC  (executed inside each thread for every element)
@@ -123,7 +123,7 @@ namespace fs = std::filesystem;
 // =============================================================================
 
 // Total parameters per model (2^30 = 1,073,741,824)
-static constexpr size_t N_PARAMS         = (1ULL << 10);
+static constexpr size_t N_PARAMS         = (1ULL << 30);
 
 // Fixed parameters (not ablated)
 static constexpr double P_OUTLIER        = 0.001;   // 0.1% of elements are outliers
