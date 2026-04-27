@@ -59,9 +59,9 @@ import zstandard as zstd
 RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
 
-CHUNK_BYTES = 8 * 1024 * 1024 * 1024   # 8 GB — always byte-aligned for every field
+CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB — always byte-aligned for every field
 ZSTD_LEVEL  = 1
-MAX_WORKERS = 6                   # 7 formats × 6 variances
+MAX_WORKERS = 42                   # 7 formats × 6 variances
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset structure
@@ -157,9 +157,11 @@ def _uint_dtype(fmt: dict) -> np.dtype:
 # padding: chunk sizes guarantee every field's bit count is a multiple of 8.
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _fields_byte_transpose(chunk: bytes, fmt: dict) -> list:
+def _fields_byte_transpose(chunk: bytes, fmt: dict):
     """
-    Split into one stream per byte-plane within each element.
+    Yield one (name, bytes) stream per byte-plane within each element.
+    Yields one plane at a time so the caller can compress-and-discard
+    before the next plane is materialised.
 
     FP32 → 4 streams (byte 0 … byte 3, little-endian)
     FP16/BF16 → 2 streams
@@ -167,89 +169,92 @@ def _fields_byte_transpose(chunk: bytes, fmt: dict) -> list:
     """
     elem_b = max(1, fmt["uint_bits"] // 8)
     if elem_b == 1:
-        return [("b0", chunk)]
+        yield ("b0", chunk)
+        return
     arr = np.frombuffer(chunk, dtype=np.uint8)
     n   = len(arr) // elem_b
     mat = arr[: n * elem_b].reshape(n, elem_b)   # shape (N, elem_b)
-    return [(f"b{i}", mat[:, i].tobytes()) for i in range(elem_b)]
+    for i in range(elem_b):
+        yield (f"b{i}", mat[:, i].tobytes())
+        # mat[:, i] is a view; tobytes() copies one plane — previous plane
+        # bytes object is released as soon as the caller discards it.
 
 
-def _fields_semantic_sep(chunk: bytes, fmt: dict) -> list:
+def _fields_semantic_sep(chunk: bytes, fmt: dict):
     """
-    Split into one stream per semantic field: sign / exponent / mantissa.
+    Yield one (name, bytes) stream per semantic field: sign / exp / mantissa.
+    Yields one plane at a time so the caller can compress-and-discard before
+    the next plane is materialised — keeps peak RAM to one plane at a time.
 
     Bit fields are packed raw (np.packbits) — no padding between elements.
     Chunk byte-alignment guarantees each field's bit count % 8 == 0.
 
-    Returns:
-      FP4 packed  → [("sign", ...), ("magnitude_index", ...)]
-      E8M0        → [("exp", ...)]
-      Standard    → [("sign", ...), ("exp", ...), ("mant", ...)]
-                    (sign omitted for n_sign==0, mant omitted for n_mant==0)
+    Yields:
+      FP4 packed  → ("sign", ...) then 3x ("mag_bitN", ...)
+      E8M0        → ("exp", ...)
+      Standard    → ("sign", ...) then n_exp x ("exp_bitN", ...)
+                    then n_mant x ("mant_bitN", ...)
     """
     n_sign = fmt["n_sign"]
     n_exp  = fmt["n_exp"]
     n_mant = fmt["n_mant"]
-    fields = []
 
     # ── Packed-nibble FP4 ────────────────────────────────────────────────────
     if fmt["packed4"]:
         packed  = np.frombuffer(chunk, dtype=np.uint8)
         lo      = packed & 0x0F
         hi      = (packed >> 4) & 0x0F
-        # interleave: element[2i] = lo nibble, element[2i+1] = hi nibble
         nibbles = np.empty(len(packed) * 2, dtype=np.uint8)
         nibbles[0::2], nibbles[1::2] = lo, hi
-        # E2M1: bit3 = sign, bits2:0 = magnitude codebook index
         sign_bits = ((nibbles >> 3) & 1).astype(np.uint8)
         mag_bits  = (nibbles & 0x7).astype(np.uint8)
-        # sign: 1 bit/elem → packbits (byte-aligned by chunk guarantee)
-        fields.append(("sign",            np.packbits(sign_bits).tobytes()))
-        # magnitude index: 3 bits/elem → pack each index's bits separately
-        #   bit2, bit1, bit0 of the 3-bit index
+        yield ("sign", np.packbits(sign_bits).tobytes())
+        del sign_bits
         for b in (2, 1, 0):
             plane = ((mag_bits >> b) & 1).astype(np.uint8)
-            fields.append((f"mag_bit{b}", np.packbits(plane).tobytes()))
-        return fields
+            yield (f"mag_bit{b}", np.packbits(plane).tobytes())
+        return
 
     # ── Pure-exponent byte (E8M0) ────────────────────────────────────────────
     if n_sign == 0 and n_mant == 0:
-        return [("exp", chunk)]
+        yield ("exp", chunk)
+        return
 
     # ── Standard float formats ───────────────────────────────────────────────
     dtype = _uint_dtype(fmt)
-    arr   = np.frombuffer(chunk, dtype=dtype)
+    arr   = np.frombuffer(chunk, dtype=dtype)   # zero-copy view
     bits  = fmt["uint_bits"]
 
-    # Sign: 1 bit/element → packbits → ceil(N/8) bytes (= N/8 exactly here)
+    # Sign: 1 bit/element
     if n_sign:
         sign_bits = ((arr >> (bits - 1)) & 1).astype(np.uint8)
-        fields.append(("sign", np.packbits(sign_bits).tobytes()))
+        yield ("sign", np.packbits(sign_bits).tobytes())
+        del sign_bits
 
-    # Exponent: n_exp bits/element → pack each bit-plane of the exponent
-    # We emit n_exp separate 1-bit planes (MSB of exp first) so the bit stream
-    # is sign_bits || exp_bit(n_exp-1) || … || exp_bit(0) || mant_bit(n_mant-1) || …
-    # Each plane is byte-aligned by the chunk guarantee.
+    # Exponent: one plane per bit, MSB first
     exp_mask = (1 << n_exp) - 1
     exp_vals = (arr >> n_mant) & exp_mask   # native dtype — no cast needed
     for b in range(n_exp - 1, -1, -1):
         plane = ((exp_vals >> b) & 1).astype(np.uint8)
-        fields.append((f"exp_bit{b}", np.packbits(plane).tobytes()))
+        yield (f"exp_bit{b}", np.packbits(plane).tobytes())
+        del plane
+    del exp_vals
 
-    # Mantissa: n_mant bits/element → pack each bit-plane
+    # Mantissa: one plane per bit, MSB first
     if n_mant:
         mant_mask = (1 << n_mant) - 1
         mant_vals = arr & mant_mask          # native dtype — no cast needed
         for b in range(n_mant - 1, -1, -1):
             plane = ((mant_vals >> b) & 1).astype(np.uint8)
-            fields.append((f"mant_bit{b}", np.packbits(plane).tobytes()))
+            yield (f"mant_bit{b}", np.packbits(plane).tobytes())
+            del plane
 
-    return fields
 
-
-def _fields_bitplane(chunk: bytes, fmt: dict) -> list:
+def _fields_bitplane(chunk: bytes, fmt: dict):
     """
-    One stream per bit-plane of the element integer, MSB → LSB.
+    Yield one (name, bytes) stream per bit-plane of the element integer, MSB→LSB.
+    Yields one plane at a time so the caller can compress-and-discard before
+    the next plane is materialised.
 
     For packed FP4: operate on the packed byte (8 planes of the byte word),
     keeping the implementation uniform without nibble unpacking.
@@ -263,11 +268,10 @@ def _fields_bitplane(chunk: bytes, fmt: dict) -> list:
         arr    = np.frombuffer(chunk, dtype=_uint_dtype(fmt))
         n_bits = fmt["uint_bits"]
 
-    fields = []
     for bit_i in range(n_bits - 1, -1, -1):   # MSB first
         plane = ((arr >> bit_i) & 1).astype(np.uint8)
-        fields.append((f"bit{bit_i}", np.packbits(plane).tobytes()))
-    return fields
+        yield (f"bit{bit_i}", np.packbits(plane).tobytes())
+        del plane
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -301,85 +305,55 @@ def _compress_multistream(field_chunks_iter_factory, level: int):
     """
     Compress a multi-stream algorithm over a file.
 
-    field_chunks_iter_factory: callable returning an iterable of chunk
-      field-lists.  Called twice — once to compress, once to decompress —
-      so that both passes read the raw file and include preprocessing cost.
-      Each element of the iterable is a list of (name, bytes) tuples.
+    field_chunks_iter_factory: a zero-argument callable that returns a fresh
+      iterable each time it is called.  Each element yielded is itself a
+      generator of (name, bytes) tuples — one per stream for that chunk.
+      Using a generator (not a list) means only one stream's data is live
+      at a time, keeping peak RAM to O(one_plane).
 
     Returns:
-      compressed_bytes_total  — sum of all compressed stream sizes
-      compress_time_s         — time to extract all fields + compress (full pass)
-      decompress_time_s       — time to extract all fields + decompress (full pass)
+      total_compressed  — sum of compressed sizes across all streams/chunks
+      compress_time_s   — field extraction + Zstd compress, full file pass
+      decompress_time_s — field extraction + Zstd decompress, full file pass
 
-    Memory design: we never accumulate all compressed blobs simultaneously.
-    Instead, we compress chunk-by-chunk using per-stream ZstdCompressor objects
-    in streaming mode (write_size approach), flushing each chunk immediately.
-    We only store total byte counts, not the blobs themselves.
-
-    For decompression timing, we re-read the file (via the factory) and measure
-    the field-extraction cost, plus we time a second Zstd compress-then-decompress
-    on a single representative chunk to get the decompression throughput.  This
-    avoids storing any blobs across chunks.
-
-    Specifically:
-      compress pass : streams through entire file, compresses each field-chunk,
-                      counts bytes, discards compressed output immediately.
-      decompress pass: streams through entire file, extracts fields (timed),
-                       plus times Zstd decompression on a single sampled chunk
-                       per stream and scales to full-file equivalent.
+    Memory contract: at most two objects are live simultaneously:
+      • the raw chunk (held by the file reader, released each iteration)
+      • one (field_name, field_bytes) tuple from the generator
+      • the corresponding compressed blob (created, counted, then del'd)
+    No compressed blobs are accumulated across chunks or streams.
+    The decompress pass re-reads the file, re-extracts each field, re-compresses
+    it (to get the blob to decompress), then immediately decompresses and discards.
     """
-    # ── Compression pass ──────────────────────────────────────────────────────
-    # One fresh ZstdCompressor per stream (stateless — compress() is one-shot).
     cctx = zstd.ZstdCompressor(level=level)
+    dctx = zstd.ZstdDecompressor()
 
-    n_streams        = None
+    # ── Compression pass ──────────────────────────────────────────────────────
     total_compressed = 0
     t_compress       = 0.0
-    # For decompression sampling: save one compressed blob per stream
-    sample_blobs     = None
 
-    for field_list in field_chunks_iter_factory():
+    for field_gen in field_chunks_iter_factory():
         t0 = time.perf_counter()
-        if n_streams is None:
-            n_streams    = len(field_list)
-            sample_blobs = [None] * n_streams
-        for s_idx, (_, data) in enumerate(field_list):
+        for _, data in field_gen:           # generator: one plane at a time
             blob = cctx.compress(data)
             total_compressed += len(blob)
-            if sample_blobs[s_idx] is None:
-                sample_blobs[s_idx] = blob   # keep first chunk's blob as sample
+            del blob                        # discard immediately
         t_compress += time.perf_counter() - t0
 
-    if n_streams is None:
+    if total_compressed == 0:
         return 0, 0.0, 0.0
 
     # ── Decompression pass ────────────────────────────────────────────────────
-    # Two components:
-    #   (a) Field-extraction cost: re-stream the file, extract fields, discard.
-    #   (b) Zstd decompression cost: measured on the sample blobs, then scaled
-    #       to the full file by the ratio (total_compressed / sample_size).
-    dctx = zstd.ZstdDecompressor()
-
+    # Re-extract each field, re-compress (to get the blob), decompress, discard.
+    # Peak memory per iteration: one raw plane + one compressed blob.
     t_decompress = 0.0
 
-    # (a) field extraction
-    for field_list in field_chunks_iter_factory():
+    for field_gen in field_chunks_iter_factory():
         t0 = time.perf_counter()
-        for _, _ in field_list:
-            pass
+        for _, data in field_gen:
+            blob = cctx.compress(data)
+            dctx.decompress(blob)
+            del blob
         t_decompress += time.perf_counter() - t0
-
-    # (b) decompress sample blobs and scale
-    sample_size = sum(len(b) for b in sample_blobs if b is not None)
-    if sample_size > 0:
-        t0 = time.perf_counter()
-        for blob in sample_blobs:
-            if blob is not None:
-                dctx.decompress(blob)
-        t_sample = time.perf_counter() - t0
-        # Scale: if sample represents sample_size bytes of compressed data,
-        # and total is total_compressed bytes, scale linearly.
-        t_decompress += t_sample * (total_compressed / sample_size)
 
     return total_compressed, t_compress, t_decompress
 

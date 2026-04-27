@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 
-INPUT_JSONL = "compression_results_2_10_V2.jsonl"
+INPUT_JSONL = "compression_results.jsonl"
 OUTPUT_DIR = Path("PLOTS")
 
 # Only splits and levels that the current benchmark actually produces
