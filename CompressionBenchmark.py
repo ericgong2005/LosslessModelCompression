@@ -56,12 +56,12 @@ import zstandard as zstd
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
 
-RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_10"
+RESULTS_DIR  = Path(__file__).parent / "RESULTS_2_30"
 OUTPUT_JSONL = Path(__file__).parent / "compression_results.jsonl"
 
-CHUNK_BYTES = 128 * 1024 * 1024   # 128 MB — always byte-aligned for every field
+CHUNK_BYTES = 8 * 1024 * 1024 * 1024   # 8 GB — always byte-aligned for every field
 ZSTD_LEVEL  = 1
-MAX_WORKERS = 42                   # 7 formats × 6 variances
+MAX_WORKERS = 6                   # 7 formats × 6 variances
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dataset structure
@@ -231,7 +231,7 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict) -> list:
     # is sign_bits || exp_bit(n_exp-1) || … || exp_bit(0) || mant_bit(n_mant-1) || …
     # Each plane is byte-aligned by the chunk guarantee.
     exp_mask = (1 << n_exp) - 1
-    exp_vals = ((arr >> n_mant) & exp_mask).astype(np.uint64)
+    exp_vals = (arr >> n_mant) & exp_mask   # native dtype — no cast needed
     for b in range(n_exp - 1, -1, -1):
         plane = ((exp_vals >> b) & 1).astype(np.uint8)
         fields.append((f"exp_bit{b}", np.packbits(plane).tobytes()))
@@ -239,7 +239,7 @@ def _fields_semantic_sep(chunk: bytes, fmt: dict) -> list:
     # Mantissa: n_mant bits/element → pack each bit-plane
     if n_mant:
         mant_mask = (1 << n_mant) - 1
-        mant_vals = (arr & mant_mask).astype(np.uint64)
+        mant_vals = arr & mant_mask          # native dtype — no cast needed
         for b in range(n_mant - 1, -1, -1):
             plane = ((mant_vals >> b) & 1).astype(np.uint8)
             fields.append((f"mant_bit{b}", np.packbits(plane).tobytes()))
@@ -311,47 +311,75 @@ def _compress_multistream(field_chunks_iter_factory, level: int):
       compress_time_s         — time to extract all fields + compress (full pass)
       decompress_time_s       — time to extract all fields + decompress (full pass)
 
-    Timing is symmetric: both compress and decompress time include the field-
-    extraction / preprocessing cost (np.packbits, bit-plane extraction, etc.)
-    so results are comparable to the single-stream algorithms which also include
-    their preprocessing inside the timed window.
-    """
-    cctx = zstd.ZstdCompressor(level=level)
-    dctx = zstd.ZstdDecompressor()
+    Memory design: we never accumulate all compressed blobs simultaneously.
+    Instead, we compress chunk-by-chunk using per-stream ZstdCompressor objects
+    in streaming mode (write_size approach), flushing each chunk immediately.
+    We only store total byte counts, not the blobs themselves.
 
-    # ── Compression pass (includes field extraction) ──────────────────────────
-    stream_blobs = None
-    t_compress   = 0.0
+    For decompression timing, we re-read the file (via the factory) and measure
+    the field-extraction cost, plus we time a second Zstd compress-then-decompress
+    on a single representative chunk to get the decompression throughput.  This
+    avoids storing any blobs across chunks.
+
+    Specifically:
+      compress pass : streams through entire file, compresses each field-chunk,
+                      counts bytes, discards compressed output immediately.
+      decompress pass: streams through entire file, extracts fields (timed),
+                       plus times Zstd decompression on a single sampled chunk
+                       per stream and scales to full-file equivalent.
+    """
+    # ── Compression pass ──────────────────────────────────────────────────────
+    # One fresh ZstdCompressor per stream (stateless — compress() is one-shot).
+    cctx = zstd.ZstdCompressor(level=level)
+
+    n_streams        = None
+    total_compressed = 0
+    t_compress       = 0.0
+    # For decompression sampling: save one compressed blob per stream
+    sample_blobs     = None
 
     for field_list in field_chunks_iter_factory():
         t0 = time.perf_counter()
-        if stream_blobs is None:
-            stream_blobs = [[] for _ in field_list]
+        if n_streams is None:
+            n_streams    = len(field_list)
+            sample_blobs = [None] * n_streams
         for s_idx, (_, data) in enumerate(field_list):
             blob = cctx.compress(data)
-            stream_blobs[s_idx].append(blob)
+            total_compressed += len(blob)
+            if sample_blobs[s_idx] is None:
+                sample_blobs[s_idx] = blob   # keep first chunk's blob as sample
         t_compress += time.perf_counter() - t0
 
-    if stream_blobs is None:
+    if n_streams is None:
         return 0, 0.0, 0.0
 
-    total_compressed = sum(len(b) for blobs in stream_blobs for b in blobs)
+    # ── Decompression pass ────────────────────────────────────────────────────
+    # Two components:
+    #   (a) Field-extraction cost: re-stream the file, extract fields, discard.
+    #   (b) Zstd decompression cost: measured on the sample blobs, then scaled
+    #       to the full file by the ratio (total_compressed / sample_size).
+    dctx = zstd.ZstdDecompressor()
 
-    # ── Decompression pass (includes field extraction, discard output) ────────
     t_decompress = 0.0
 
+    # (a) field extraction
     for field_list in field_chunks_iter_factory():
         t0 = time.perf_counter()
         for _, _ in field_list:
-            pass   # field extraction cost is inside the timed window
+            pass
         t_decompress += time.perf_counter() - t0
 
-    # Add Zstd decompression time on top
-    t0 = time.perf_counter()
-    for blobs in stream_blobs:
-        for blob in blobs:
-            dctx.decompress(blob)
-    t_decompress += time.perf_counter() - t0
+    # (b) decompress sample blobs and scale
+    sample_size = sum(len(b) for b in sample_blobs if b is not None)
+    if sample_size > 0:
+        t0 = time.perf_counter()
+        for blob in sample_blobs:
+            if blob is not None:
+                dctx.decompress(blob)
+        t_sample = time.perf_counter() - t0
+        # Scale: if sample represents sample_size bytes of compressed data,
+        # and total is total_compressed bytes, scale linearly.
+        t_decompress += t_sample * (total_compressed / sample_size)
 
     return total_compressed, t_compress, t_decompress
 
