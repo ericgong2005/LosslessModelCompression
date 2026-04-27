@@ -459,15 +459,15 @@ def _run_trial(fmt: dict, var: str, split: str, algo: str, level: int) -> dict:
             original_bytes    = w_orig,
             compressed_bytes  = w_comp,
             ratio             = _ratio(w_comp, w_orig),
-            compress_time_s   = round(w_tc, 3),
-            decompress_time_s = round(w_td, 3),
+            compress_time_s   = w_tc,
+            decompress_time_s = w_td,
         ),
         scales     = dict(
             original_bytes    = s_orig,
             compressed_bytes  = s_comp,
             ratio             = _ratio(s_comp, s_orig),
-            compress_time_s   = round(s_tc, 3) if s_tc is not None else None,
-            decompress_time_s = round(s_td, 3) if s_td is not None else None,
+            compress_time_s   = s_tc if s_tc is not None else None,
+            decompress_time_s = s_td if s_td is not None else None,
         ),
     )
 
