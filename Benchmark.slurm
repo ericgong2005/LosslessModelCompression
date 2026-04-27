@@ -7,9 +7,14 @@
 #SBATCH --exclusive
 #SBATCH --time=12:00:00
 
-module purge
-module load python/3.9
-python -m pip install --user numpy
-python -m pip install --user zstandard
+which python
+python --version
+python -m pip --version
+
+python -m pip install numpy zstandard
+
+python -c "import sys; print(sys.executable)"
+python -c "import numpy; print(numpy.__version__)"
+python -c "import zstandard; print(zstandard.__version__)"
 
 srun --cpu-bind=none python CompressionBenchmark.py
