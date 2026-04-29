@@ -1,7 +1,5 @@
 # LosslessModelCompression
 Characterizing different algorithms for Lossless LLM Model Compression
 
-. ~/161588/spack/share/spack/setup-env.sh
-spack env activate -p CS-2050
-python -m venv .venv
-source .venv/bin/activate
+## Usage
+All code is executed on the Harvard Compute Cluster. To generate the synthetic model weights, use `sbatch Submit.slurm`. To run the evaluations on various pre-processing methods with the Huffman encoding algorithms and Zstd algorithms, use `sbatch BenchmarkHuffman.slurm` and `sbatch BenchmarkZstd.slurm` respectively. Generate plots of results by running `python Plot.py`

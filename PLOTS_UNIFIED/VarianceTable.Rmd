@@ -1,0 +1,109 @@
+---
+title: "Variance Independence Tables"
+output: html_document
+---
+
+## Compression Ratio
+
+Each cell shows $\text{mean} \pm \text{std}$ across the 6 weight variance levels (averaged over splits before computing statistics).
+
+| Algorithm / Compressor | FP32:E8M23 | BF16:E8M7 | FP16:E5M10 | FP8:E5M2 | FP8:E4M3 | MXFP4:E2M1 | NVFP4:E2M1 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Baseline
+Zstd | $\small 0.9259 \pm 0.0013$ | $\small 0.7801 \pm 0.0026$ | $\small 0.9186 \pm 0.0002$ | $\small 0.7140 \pm 0.0000$ | $\small 0.8017 \pm 0.0000$ | $\small 0.9496 \pm 0.0070$ | $\small 1.0000 \pm 0.0000$ |
+| Baseline
+Huffman | $\small 0.9259 \pm 0.0013$ | $\small 0.7799 \pm 0.0026$ | $\small 0.9184 \pm 0.0002$ | $\small 0.7106 \pm 0.0000$ | $\small 0.7962 \pm 0.0000$ | $\small 0.9490 \pm 0.0072$ | $\small 0.9966 \pm 0.0001$ |
+| Byte-split
+Huffman | $\small 0.8348 \pm 0.0012$ | $\small 0.6696 \pm 0.0024$ | $\small 0.8442 \pm 0.0004$ | $\small 0.7106 \pm 0.0000$ | $\small 0.7962 \pm 0.0000$ | $\small 0.9490 \pm 0.0072$ | $\small 0.9966 \pm 0.0001$ |
+| Byte-split
+Zstd | $\small 0.8422 \pm 0.0005$ | $\small 0.6845 \pm 0.0010$ | $\small 0.8465 \pm 0.0005$ | $\small 0.7140 \pm 0.0000$ | $\small 0.8017 \pm 0.0000$ | $\small 0.9496 \pm 0.0070$ | $\small 1.0000 \pm 0.0000$ |
+| Semantic-split
+Huffman | $\small 0.8335 \pm 0.0003$ | $\small 0.6231 \pm 0.0006$ | $\small 0.6190 \pm 0.0004$ | $\small 0.3358 \pm 0.0000$ | $\small 0.3940 \pm 0.0000$ | $\small 0.4277 \pm 0.0031$ | $\small 0.4444 \pm 0.0000$ |
+| Semantic-split
+Zstd | $\small 0.8453 \pm 0.0002$ | $\small 0.6409 \pm 0.0004$ | $\small 0.6309 \pm 0.0003$ | $\small 0.3790 \pm 0.0000$ | $\small 0.4118 \pm 0.0000$ | $\small 0.4389 \pm 0.0016$ | $\small 0.4479 \pm 0.0000$ |
+| Bit-split
+Huffman | $\small 0.8603 \pm 0.0056$ | $\small 0.7206 \pm 0.0112$ | $\small 0.8838 \pm 0.0121$ | $\small 0.7754 \pm 0.0000$ | $\small 0.8546 \pm 0.0000$ | $\small 0.9704 \pm 0.0040$ | $\small 0.9989 \pm 0.0000$ |
+| Bit-split
+Zstd | $\small 0.8489 \pm 0.0046$ | $\small 0.6979 \pm 0.0092$ | $\small 0.8802 \pm 0.0122$ | $\small 0.7647 \pm 0.0000$ | $\small 0.8559 \pm 0.0000$ | $\small 0.9706 \pm 0.0040$ | $\small 1.0000 \pm 0.0000$ |
+| Gorilla
+Huffman | $\small 0.9392 \pm 0.0029$ | $\small 0.8054 \pm 0.0071$ | $\small 0.9440 \pm 0.0044$ | $\small 0.7758 \pm 0.0000$ | $\small 0.8801 \pm 0.0000$ | $\small 0.9965 \pm 0.0014$ | $\small 1.0000 \pm 0.0000$ |
+| Gorilla
+Zstd | $\small 0.9383 \pm 0.0029$ | $\small 0.8055 \pm 0.0071$ | $\small 0.9442 \pm 0.0044$ | $\small 0.7785 \pm 0.0000$ | $\small 0.8826 \pm 0.0000$ | $\small 1.0000 \pm 0.0000$ | $\small 1.0000 \pm 0.0000$ |
+| XOR Delta
+Huffman | $\small 0.1338 \pm 0.0000$ | $\small 0.1321 \pm 0.0001$ | $\small 0.1341 \pm 0.0000$ | $\small 0.1356 \pm 0.0000$ | $\small 0.1383 \pm 0.0000$ | $\small 0.1379 \pm 0.0008$ | $\small 0.1407 \pm 0.0000$ |
+| XOR Delta
+Zstd | $\small 0.0166 \pm 0.0000$ | $\small 0.0201 \pm 0.0001$ | $\small 0.0218 \pm 0.0000$ | $\small 0.0341 \pm 0.0000$ | $\small 0.0364 \pm 0.0000$ | $\small 0.0473 \pm 0.0008$ | $\small 0.0533 \pm 0.0000$ |
+| Gorilla XOR Delta
+Huffman | $\small 0.1425 \pm 0.0001$ | $\small 0.1392 \pm 0.0001$ | $\small 0.1431 \pm 0.0001$ | $\small 0.1432 \pm 0.0000$ | $\small 0.1471 \pm 0.0000$ | $\small 0.1485 \pm 0.0010$ | $\small 0.1530 \pm 0.0000$ |
+| Gorilla XOR Delta
+Zstd | $\small 0.0250 \pm 0.0000$ | $\small 0.0258 \pm 0.0002$ | $\small 0.0307 \pm 0.0001$ | $\small 0.0410 \pm 0.0000$ | $\small 0.0445 \pm 0.0000$ | $\small 0.0570 \pm 0.0011$ | $\small 0.0643 \pm 0.0000$ |
+
+## Compression Throughput (GB/s)
+
+Each cell shows $\text{mean} \pm \text{std}$ across the 6 weight variance levels (averaged over splits before computing statistics).
+
+| Algorithm / Compressor | FP32:E8M23 | BF16:E8M7 | FP16:E5M10 | FP8:E5M2 | FP8:E4M3 | MXFP4:E2M1 | NVFP4:E2M1 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Baseline
+Zstd | $\small 0.5734 \pm 0.0060$ | $\small 0.5996 \pm 0.0153$ | $\small 0.5784 \pm 0.0136$ | $\small 0.6334 \pm 0.0040$ | $\small 0.6123 \pm 0.0035$ | $\small 0.5494 \pm 0.0057$ | $\small 1.0144 \pm 0.0117$ |
+| Baseline
+Huffman | $\small 0.0947 \pm 0.0004$ | $\small 0.0884 \pm 0.0010$ | $\small 0.0925 \pm 0.0005$ | $\small 0.1028 \pm 0.0012$ | $\small 0.1019 \pm 0.0016$ | $\small 0.1025 \pm 0.0010$ | $\small 0.1038 \pm 0.0015$ |
+| Byte-split
+Huffman | $\small 0.0574 \pm 0.0002$ | $\small 0.0796 \pm 0.0003$ | $\small 0.0797 \pm 0.0002$ | $\small 0.1126 \pm 0.0007$ | $\small 0.1123 \pm 0.0005$ | $\small 0.1147 \pm 0.0010$ | $\small 0.1156 \pm 0.0008$ |
+| Byte-split
+Zstd | $\small 0.6086 \pm 0.0080$ | $\small 0.4054 \pm 0.0080$ | $\small 0.8382 \pm 0.0033$ | $\small 0.6357 \pm 0.0012$ | $\small 0.6138 \pm 0.0010$ | $\small 0.5488 \pm 0.0024$ | $\small 1.0053 \pm 0.0125$ |
+| Semantic-split
+Huffman | $\small 0.0405 \pm 0.0002$ | $\small 0.0456 \pm 0.0002$ | $\small 0.0558 \pm 0.0003$ | $\small 0.0595 \pm 0.0003$ | $\small 0.0590 \pm 0.0003$ | $\small 0.0513 \pm 0.0003$ | $\small 0.0513 \pm 0.0003$ |
+| Semantic-split
+Zstd | $\small 0.5403 \pm 0.0012$ | $\small 0.3543 \pm 0.0009$ | $\small 0.4111 \pm 0.0010$ | $\small 0.2505 \pm 0.0002$ | $\small 0.2878 \pm 0.0004$ | $\small 0.2924 \pm 0.0036$ | $\small 0.3508 \pm 0.0017$ |
+| Bit-split
+Huffman | $\small 0.0011 \pm 0.0000$ | $\small 0.0038 \pm 0.0000$ | $\small 0.0038 \pm 0.0000$ | $\small 0.0083 \pm 0.0001$ | $\small 0.0083 \pm 0.0001$ | $\small 0.0103 \pm 0.0001$ | $\small 0.0103 \pm 0.0001$ |
+| Bit-split
+Zstd | $\small 1.5560 \pm 0.1826$ | $\small 1.1293 \pm 0.1748$ | $\small 1.1985 \pm 0.0635$ | $\small 0.9028 \pm 0.0057$ | $\small 0.8123 \pm 0.0053$ | $\small 0.8798 \pm 0.0476$ | $\small 1.2892 \pm 0.0915$ |
+| Gorilla
+Huffman | $\small 0.0895 \pm 0.0006$ | $\small 0.0894 \pm 0.0005$ | $\small 0.0894 \pm 0.0007$ | $\small 0.0896 \pm 0.0006$ | $\small 0.0895 \pm 0.0005$ | $\small 0.0894 \pm 0.0007$ | $\small 0.0892 \pm 0.0005$ |
+| Gorilla
+Zstd | $\small 0.5706 \pm 0.0093$ | $\small 0.5976 \pm 0.0055$ | $\small 0.5713 \pm 0.0128$ | $\small 0.6216 \pm 0.0043$ | $\small 0.5975 \pm 0.0012$ | $\small 0.5282 \pm 0.0043$ | $\small 1.1295 \pm 0.0037$ |
+| XOR Delta
+Huffman | $\small 0.0562 \pm 0.0012$ | $\small 0.0551 \pm 0.0006$ | $\small 0.0530 \pm 0.0013$ | $\small 0.0564 \pm 0.0004$ | $\small 0.0590 \pm 0.0010$ | $\small 0.0482 \pm 0.0025$ | $\small 0.0548 \pm 0.0025$ |
+| XOR Delta
+Zstd | $\small 2.4385 \pm 0.0546$ | $\small 1.7358 \pm 0.0158$ | $\small 1.7239 \pm 0.0124$ | $\small 1.1406 \pm 0.0121$ | $\small 1.1019 \pm 0.0175$ | $\small 0.7993 \pm 0.0247$ | $\small 0.7538 \pm 0.0165$ |
+| Gorilla XOR Delta
+Huffman | $\small 0.0434 \pm 0.0004$ | $\small 0.0413 \pm 0.0013$ | $\small 0.0505 \pm 0.0001$ | $\small 0.0495 \pm 0.0004$ | $\small 0.0478 \pm 0.0006$ | $\small 0.0455 \pm 0.0008$ | $\small 0.0462 \pm 0.0008$ |
+| Gorilla XOR Delta
+Zstd | $\small 2.0539 \pm 0.0113$ | $\small 1.5898 \pm 0.0212$ | $\small 1.5110 \pm 0.0267$ | $\small 1.1073 \pm 0.0190$ | $\small 1.0686 \pm 0.0204$ | $\small 0.7886 \pm 0.0106$ | $\small 0.7321 \pm 0.0033$ |
+
+## Decompression Throughput (GB/s)
+
+Each cell shows $\text{mean} \pm \text{std}$ across the 6 weight variance levels (averaged over splits before computing statistics).
+
+| Algorithm / Compressor | FP32:E8M23 | BF16:E8M7 | FP16:E5M10 | FP8:E5M2 | FP8:E4M3 | MXFP4:E2M1 | NVFP4:E2M1 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Baseline
+Zstd | $\small 0.7260 \pm 0.0036$ | $\small 0.6646 \pm 0.0100$ | $\small 0.7318 \pm 0.0025$ | $\small 0.8050 \pm 0.0054$ | $\small 0.6901 \pm 0.0008$ | $\small 0.7158 \pm 0.0067$ | $\small 1.4225 \pm 0.0197$ |
+| Baseline
+Huffman | — | — | — | — | — | — | — |
+| Byte-split
+Huffman | — | — | — | — | — | — | — |
+| Byte-split
+Zstd | $\small 1.1242 \pm 0.0025$ | $\small 0.9054 \pm 0.0065$ | $\small 1.0577 \pm 0.0063$ | $\small 0.8183 \pm 0.0044$ | $\small 0.6983 \pm 0.0030$ | $\small 0.7090 \pm 0.0054$ | $\small 1.4057 \pm 0.0213$ |
+| Semantic-split
+Huffman | — | — | — | — | — | — | — |
+| Semantic-split
+Zstd | $\small 1.1509 \pm 0.0062$ | $\small 0.6970 \pm 0.0026$ | $\small 0.6584 \pm 0.0036$ | $\small 0.6320 \pm 0.0064$ | $\small 0.7649 \pm 0.0100$ | $\small 0.7307 \pm 0.0136$ | $\small 0.8572 \pm 0.0083$ |
+| Bit-split
+Huffman | — | — | — | — | — | — | — |
+| Bit-split
+Zstd | $\small 3.1622 \pm 0.4228$ | $\small 2.3418 \pm 0.4503$ | $\small 2.5071 \pm 0.3238$ | $\small 1.8760 \pm 0.0095$ | $\small 2.3449 \pm 0.0197$ | $\small 1.7559 \pm 0.0860$ | $\small 3.9411 \pm 0.1524$ |
+| Gorilla
+Huffman | — | — | — | — | — | — | — |
+| Gorilla
+Zstd | $\small 0.7185 \pm 0.0052$ | $\small 0.6463 \pm 0.0084$ | $\small 0.7264 \pm 0.0018$ | $\small 0.7111 \pm 0.0104$ | $\small 0.7280 \pm 0.0055$ | $\small 1.3356 \pm 0.0148$ | $\small 1.4030 \pm 0.0297$ |
+| XOR Delta
+Huffman | — | — | — | — | — | — | — |
+| XOR Delta
+Zstd | $\small 1.4236 \pm 0.0242$ | $\small 1.2564 \pm 0.0132$ | $\small 1.2633 \pm 0.0116$ | $\small 1.0393 \pm 0.0064$ | $\small 1.0299 \pm 0.0087$ | $\small 0.8936 \pm 0.0070$ | $\small 0.8560 \pm 0.0103$ |
+| Gorilla XOR Delta
+Huffman | — | — | — | — | — | — | — |
+| Gorilla XOR Delta
+Zstd | $\small 1.3293 \pm 0.0118$ | $\small 1.2006 \pm 0.0065$ | $\small 1.2090 \pm 0.0109$ | $\small 1.0089 \pm 0.0094$ | $\small 1.0055 \pm 0.0158$ | $\small 0.8609 \pm 0.0204$ | $\small 0.8529 \pm 0.0029$ |
