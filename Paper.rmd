@@ -88,7 +88,7 @@ We find that the difference in the compression ratio and compression throughput 
 ### 3.2.1 Compression Ratio
 
 ```{r, echo=FALSE, fig.cap="", out.width="80%", fig.align="center"}
-knitr::include_graphics("PLOTS_UNIFIED/Overall/algo_bars_compress_time_base.png")
+knitr::include_graphics("PLOTS_UNIFIED/Overall/algo_bars_ratio_base.png")
 ```
 
 Figure 3 analyzes synthetic model weight compressibility across different algorithms and quantizations. We find that in all cases, the pre-processing step has a far more substantial impact on final compressibility than the underlying compression algorithm. In particular, the gorilla pre-processing method exhibits worse performance than the baseline, while any sort of splitting pre-processing outperforms the baseline. We find interestingly that while higher quantizations levels such as FP32 have equally poor compressibility across split-type compression methods (semantic, bit, or byte) at over 80\% compression ratio, smaller quantizations levels see significantly increased performance with the semantic split pre-processing method.
